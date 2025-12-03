@@ -1,228 +1,257 @@
-import { useState, FormEvent } from "react";
-import { X } from "lucide-react";
+import { useState } from 'react';
+import { Send, Check, Loader2 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
-interface ContactFormModalProps {
-  productName?: string;
-  onClose: () => void;
-}
-
-export const ContactFormModal = ({ productName, onClose }: ContactFormModalProps) => {
+export const ContactFormModal = () => {
   const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    company: "",
-    message: "",
-    productInterest: productName || ""
+    name: '',
+    email: '',
+    message: ''
   });
+  const [focused, setFocused] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitStatus, setSubmitStatus] = useState<"idle" | "success" | "error">("idle");
+  const [isSuccess, setIsSuccess] = useState(false);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = async (e: FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    setSubmitStatus("idle");
+    
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    console.log('Form submitted:', formData);
+    setIsSubmitting(false);
+    setIsSuccess(true);
+    
+    // Reset form after success
+    setTimeout(() => {
+      setFormData({ name: '', email: '', message: '' });
+      setIsSuccess(false);
+    }, 3000);
+  };
 
-    try {
-      // Replace this URL with your Google Apps Script web app URL
-      const GOOGLE_SCRIPT_URL = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE";
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData(prev => ({
+      ...prev,
+      [e.target.name]: e.target.value
+    }));
+  };
 
-      const response = await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors", // Important for Google Apps Script
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          ...formData,
-          timestamp: new Date().toISOString(),
-          source: "Creative Home Décor Website"
-        }),
-      });
-
-      // Since mode is 'no-cors', we can't read the response
-      // We'll assume success if no error is thrown
-      setSubmitStatus("success");
-      
-      // Reset form after 2 seconds and close modal
-      setTimeout(() => {
-        setFormData({
-          name: "",
-          email: "",
-          phone: "",
-          company: "",
-          message: "",
-          productInterest: productName || ""
-        });
-        onClose();
-      }, 2000);
-    } catch (error) {
-      console.error("Error sending form:", error);
-      setSubmitStatus("error");
-    } finally {
-      setIsSubmitting(false);
-    }
+  const inputVariants = {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
   };
 
   return (
-    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-6">
-      <div className="bg-card border border-border rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl">
-        <div className="p-8">
-          {/* Header */}
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-3xl font-light mb-2">Contact Us</h2>
-              {productName && (
-                <p className="text-muted-foreground">
-                  Inquiring about: <span className="text-accent font-medium">{productName}</span>
-                </p>
+    <form onSubmit={handleSubmit} className="space-y-8">
+      {/* Name Field */}
+      <motion.div
+        className="relative"
+        variants={inputVariants}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: 0.1 }}
+      >
+        <motion.label
+          htmlFor="name"
+          className={`absolute left-0 transition-all duration-300 pointer-events-none ${
+            focused === 'name' || formData.name
+              ? '-top-6 text-sm text-blue-400'
+              : 'top-4 text-lg text-gray-400'
+          }`}
+        >
+          Your Name
+        </motion.label>
+        <input
+          id="name"
+          type="text"
+          name="name"
+          value={formData.name}
+          onChange={handleChange}
+          onFocus={() => setFocused('name')}
+          onBlur={() => setFocused(null)}
+          className="w-full px-0 py-4 bg-transparent border-0 border-b-2 border-gray-600 focus:border-blue-400 outline-none transition-all duration-300 text-lg text-white"
+          required
+        />
+        <motion.div
+          className="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-blue-400 to-purple-400"
+          initial={{ width: 0 }}
+          animate={{ width: focused === 'name' ? '100%' : '0%' }}
+          transition={{ duration: 0.3 }}
+        />
+      </motion.div>
+
+      {/* Email Field */}
+      <motion.div
+        className="relative"
+        variants={inputVariants}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: 0.2 }}
+      >
+        <motion.label
+          htmlFor="email"
+          className={`absolute left-0 transition-all duration-300 pointer-events-none ${
+            focused === 'email' || formData.email
+              ? '-top-6 text-sm text-blue-400'
+              : 'top-4 text-lg text-gray-400'
+          }`}
+        >
+          Your Email
+        </motion.label>
+        <input
+          id="email"
+          type="email"
+          name="email"
+          value={formData.email}
+          onChange={handleChange}
+          onFocus={() => setFocused('email')}
+          onBlur={() => setFocused(null)}
+          className="w-full px-0 py-4 bg-transparent border-0 border-b-2 border-gray-600 focus:border-blue-400 outline-none transition-all duration-300 text-lg text-white"
+          required
+        />
+        <motion.div
+          className="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-blue-400 to-purple-400"
+          initial={{ width: 0 }}
+          animate={{ width: focused === 'email' ? '100%' : '0%' }}
+          transition={{ duration: 0.3 }}
+        />
+      </motion.div>
+
+      {/* Message Field */}
+      <motion.div
+        className="relative"
+        variants={inputVariants}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: 0.3 }}
+      >
+        <motion.label
+          htmlFor="message"
+          className={`absolute left-0 transition-all duration-300 pointer-events-none ${
+            focused === 'message' || formData.message
+              ? '-top-6 text-sm text-blue-400'
+              : 'top-4 text-lg text-gray-400'
+          }`}
+        >
+          Your Message
+        </motion.label>
+        <textarea
+          id="message"
+          name="message"
+          value={formData.message}
+          onChange={handleChange}
+          onFocus={() => setFocused('message')}
+          onBlur={() => setFocused(null)}
+          rows={4}
+          className="w-full px-0 py-4 bg-transparent border-0 border-b-2 border-gray-600 focus:border-blue-400 outline-none transition-all duration-300 text-lg resize-none text-white"
+          required
+        />
+        <motion.div
+          className="absolute bottom-0 left-0 h-[2px] bg-gradient-to-r from-blue-400 to-purple-400"
+          initial={{ width: 0 }}
+          animate={{ width: focused === 'message' ? '100%' : '0%' }}
+          transition={{ duration: 0.3 }}
+        />
+      </motion.div>
+
+      {/* Submit Button */}
+      <motion.div
+        variants={inputVariants}
+        initial="initial"
+        whileInView="animate"
+        viewport={{ once: true }}
+        transition={{ duration: 0.4, delay: 0.4 }}
+      >
+        <motion.button
+          type="submit"
+          disabled={isSubmitting || isSuccess}
+          className="group relative px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-600 text-white overflow-hidden rounded-lg disabled:opacity-70 disabled:cursor-not-allowed"
+          whileHover={{ scale: isSubmitting || isSuccess ? 1 : 1.05 }}
+          whileTap={{ scale: isSubmitting || isSuccess ? 1 : 0.95 }}
+        >
+          {/* Animated background */}
+          <motion.div
+            className="absolute inset-0 bg-gradient-to-r from-purple-600 to-blue-500"
+            initial={{ x: '100%' }}
+            whileHover={{ x: 0 }}
+            transition={{ duration: 0.3 }}
+          />
+
+          {/* Button Content */}
+          <span className="relative z-10 flex items-center justify-center gap-2 font-light tracking-wide">
+            <AnimatePresence mode="wait">
+              {isSubmitting ? (
+                <motion.span
+                  key="submitting"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center gap-2"
+                >
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  Sending...
+                </motion.span>
+              ) : isSuccess ? (
+                <motion.span
+                  key="success"
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.8 }}
+                  className="flex items-center gap-2"
+                >
+                  <Check className="w-5 h-5" />
+                  Message Sent!
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="default"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center gap-2"
+                >
+                  Send Message
+                  <motion.span
+                    animate={{
+                      x: [0, 5, 0],
+                      y: [0, -5, 0],
+                    }}
+                    transition={{
+                      duration: 1.5,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                  >
+                    <Send className="w-5 h-5" />
+                  </motion.span>
+                </motion.span>
               )}
-            </div>
-            <button
-              onClick={onClose}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="Close"
-            >
-              <X className="w-6 h-6" />
-            </button>
-          </div>
+            </AnimatePresence>
+          </span>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label htmlFor="name" className="block text-sm font-medium mb-2">
-                  Name *
-                </label>
-                <input
-                  type="text"
-                  id="name"
-                  name="name"
-                  required
-                  value={formData.name}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
-                  placeholder="Your full name"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium mb-2">
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  id="email"
-                  name="email"
-                  required
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
-                  placeholder="your@email.com"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div>
-                <label htmlFor="phone" className="block text-sm font-medium mb-2">
-                  Phone Number *
-                </label>
-                <input
-                  type="tel"
-                  id="phone"
-                  name="phone"
-                  required
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
-                  placeholder="+91 XXXXX XXXXX"
-                />
-              </div>
-
-              <div>
-                <label htmlFor="company" className="block text-sm font-medium mb-2">
-                  Company Name
-                </label>
-                <input
-                  type="text"
-                  id="company"
-                  name="company"
-                  value={formData.company}
-                  onChange={handleChange}
-                  className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all"
-                  placeholder="Your company (optional)"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label htmlFor="message" className="block text-sm font-medium mb-2">
-                Message *
-              </label>
-              <textarea
-                id="message"
-                name="message"
-                required
-                value={formData.message}
-                onChange={handleChange}
-                rows={5}
-                className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-accent transition-all resize-none"
-                placeholder="Tell us about your requirements, quantity, timeline, etc."
-              />
-            </div>
-
-            {submitStatus === "success" && (
-              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4 text-green-600">
-                <p className="font-medium">✓ Message sent successfully!</p>
-                <p className="text-sm mt-1">We'll get back to you shortly.</p>
-              </div>
-            )}
-
-            {submitStatus === "error" && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-4 text-red-600">
-                <p className="font-medium">✗ Failed to send message</p>
-                <p className="text-sm mt-1">Please try again or email us directly at vikram@creativehomedecorllp.com</p>
-              </div>
-            )}
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="w-full bg-accent text-accent-foreground hover:bg-accent/90 py-4 px-8 rounded-lg text-lg font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-105 active:scale-95"
-            >
-              {isSubmitting ? "Sending..." : "Send Message"}
-            </button>
-
-            <p className="text-xs text-muted-foreground text-center">
-              By submitting this form, you agree to our privacy policy and terms of service.
-            </p>
-          </form>
-
-          {/* Alternative Contact */}
-          <div className="mt-8 pt-8 border-t border-border">
-            <p className="text-sm text-muted-foreground text-center mb-4">
-              Or reach us directly:
-            </p>
-            <div className="flex flex-wrap justify-center gap-6 text-sm">
-              <a
-                href="mailto:vikram@creativehomedecorllp.com"
-                className="flex items-center gap-2 text-muted-foreground hover:text-accent transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                vikram@creativehomedecorllp.com
-              </a>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+          {/* Hover shine effect */}
+          <motion.div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            initial={false}
+          >
+            <motion.div
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent"
+              animate={{
+                x: ['-200%', '200%'],
+              }}
+              transition={{
+                duration: 1.5,
+                repeat: Infinity,
+                ease: "linear",
+              }}
+            />
+          </motion.div>
+        </motion.button>
+      </motion.div>
+    </form>
   );
 };
