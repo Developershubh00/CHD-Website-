@@ -251,7 +251,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { MapPin, Phone, Mail, ArrowUpRight, Send } from "lucide-react";
+import { MapPin, Phone, Mail, ArrowUpRight, Send, Linkedin } from "lucide-react";
 
 const ContactFormModal = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -334,25 +334,25 @@ const ContactFormModal = () => {
       </motion.button>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl p-8 max-w-md w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-card rounded-2xl p-4 md:p-6 max-w-xl w-full max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-light text-slate-900">Get in Touch</h3>
+            <div className="flex justify-between items-center mb-3 md:mb-4 flex-shrink-0">
+              <h3 className="text-xl md:text-2xl font-light text-slate-900 dark:text-foreground">Get in Touch</h3>
               <button
                 onClick={() => setIsOpen(false)}
-                className="text-slate-400 hover:text-slate-900 text-2xl"
+                className="text-slate-400 hover:text-slate-900 dark:hover:text-foreground text-xl md:text-2xl transition-colors"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-2.5 md:space-y-3 flex-1 flex flex-col min-h-0">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Name *
                 </label>
                 <input
@@ -361,12 +361,12 @@ const ContactFormModal = () => {
                   value={formData.name}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Email *
                 </label>
                 <input
@@ -375,12 +375,12 @@ const ContactFormModal = () => {
                   value={formData.email}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Phone
                 </label>
                 <input
@@ -388,12 +388,12 @@ const ContactFormModal = () => {
                   name="phone"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Company
                 </label>
                 <input
@@ -401,12 +401,12 @@ const ContactFormModal = () => {
                   name="company"
                   value={formData.company}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Message *
                 </label>
                 <textarea
@@ -414,19 +414,19 @@ const ContactFormModal = () => {
                   value={formData.message}
                   onChange={handleChange}
                   required
-                  rows={4}
-                  className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent outline-none resize-none"
+                  rows={2}
+                  className="w-full h-20 md:h-24 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none resize-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               {submitStatus === 'success' && (
-                <div className="p-4 bg-green-50 text-green-800 rounded-lg">
+                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg">
                   Thank you! We'll get back to you soon.
                 </div>
               )}
 
               {submitStatus === 'error' && (
-                <div className="p-4 bg-red-50 text-red-800 rounded-lg">
+                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg">
                   Something went wrong. Please try again.
                 </div>
               )}
@@ -434,7 +434,7 @@ const ContactFormModal = () => {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-slate-900 text-white py-3 rounded-lg hover:bg-slate-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-slate-900 dark:bg-slate-800 text-white py-2 md:py-2.5 text-sm md:text-base rounded-lg hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 mt-2"
               >
                 {isSubmitting ? 'Sending...' : 'Send Message'}
               </button>
@@ -449,11 +449,7 @@ const ContactFormModal = () => {
 const ContactSection = () => {
   const currentYear = new Date().getFullYear();
 
-  const socialLinks = [
-    { name: "LinkedIn", href: "#" },
-    { name: "Instagram", href: "#" },
-    { name: "Facebook", href: "#" },
-  ];
+  const linkedinLink = { name: "LinkedIn", href: "#" };
 
   const quickLinks = [
     { name: "About", href: "#about" },
@@ -609,26 +605,22 @@ const ContactSection = () => {
                 Follow Us
               </h3>
               <div className="flex gap-4">
-                {socialLinks.map((social, index) => (
-                  <motion.a
-                    key={social.name}
-                    href={social.href}
-                    className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all text-sm text-slate-700 font-medium"
-                    initial={{ opacity: 0, scale: 0 }}
-                    whileInView={{ opacity: 1, scale: 1 }}
-                    viewport={{ once: true }}
-                    transition={{
-                      duration: 0.3,
-                      delay: index * 0.1,
-                      type: "spring",
-                      stiffness: 200,
-                    }}
-                    whileHover={{ scale: 1.1, rotate: 5 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    {social.name.slice(0, 2)}
-                  </motion.a>
-                ))}
+                <motion.a
+                  href={linkedinLink.href}
+                  className="w-12 h-12 rounded-full bg-slate-200 flex items-center justify-center hover:bg-slate-800 hover:text-white transition-all text-slate-700"
+                  initial={{ opacity: 0, scale: 0 }}
+                  whileInView={{ opacity: 1, scale: 1 }}
+                  viewport={{ once: true }}
+                  transition={{
+                    duration: 0.3,
+                    type: "spring",
+                    stiffness: 200,
+                  }}
+                  whileHover={{ scale: 1.1, rotate: 5 }}
+                  whileTap={{ scale: 0.95 }}
+                >
+                  <Linkedin className="w-6 h-6" />
+                </motion.a>
               </div>
             </div>
           </motion.div>

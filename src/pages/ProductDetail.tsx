@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, X, Star, ChevronRight, Send } from "lucide-react";
+import { ArrowLeft, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import rugImage from "@/assets/product-rug.png";
 import placematImage from "@/assets/product-placemat.png";
@@ -16,6 +16,114 @@ import lifestylePlacemat from "@/assets/lifestyle-placemat.jpg";
 import lifestyleBedding from "@/assets/lifestyle-bedding.jpg";
 import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
 import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
+
+// Pre-load all product images using Vite's import.meta.glob
+// Using eager: true to pre-load all images synchronously
+// Match both jpg and png files
+const imageModulesJpg = import.meta.glob('/src/assets/**/image_*.jpg', { 
+  eager: true,
+  import: 'default'
+}) as Record<string, string>;
+
+const imageModulesPng = import.meta.glob('/src/assets/**/image_*.png', { 
+  eager: true,
+  import: 'default'
+}) as Record<string, string>;
+
+// Combine both modules
+const allImageModules = { ...imageModulesJpg, ...imageModulesPng };
+
+// Pre-load all data.json files (manually curated product data)
+const dataModules = import.meta.glob('/src/assets/**/data.json', {
+  eager: true,
+  import: 'default'
+}) as Record<string, {
+  styleNumber?: string;
+  description?: string;
+  technique?: string;
+  content?: string;
+  size?: string;
+  season?: string;
+}>;
+
+// Helper function to get data from JSON file
+function getDataFromJson(category: string, slideNumber: number) {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  
+  // Try different path variations
+  const pathVariations = [
+    `/src/assets/${category}/slide_${slideNum}/data.json`,
+    `./src/assets/${category}/slide_${slideNum}/data.json`,
+    `src/assets/${category}/slide_${slideNum}/data.json`,
+  ];
+  
+  // Try to find the data file
+  for (const path of pathVariations) {
+    if (dataModules[path]) {
+      return dataModules[path];
+    }
+  }
+  
+  // Also try partial match
+  const searchKey = `slide_${slideNum}/data.json`;
+  for (const [key, value] of Object.entries(dataModules)) {
+    if (key.includes(searchKey)) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to get image URL dynamically
+function getImageUrl(category: string, slideNumber: number, imageName: string): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  
+  // Try both .jpg and .png extensions
+  const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
+  // Vite's glob might use different path formats, try multiple variations
+  const pathVariations = [
+    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+  ];
+  
+  // Try to find the image in the pre-loaded modules
+  for (const path of pathVariations) {
+    if (allImageModules[path]) {
+      return allImageModules[path] as string;
+    }
+  }
+  
+  // Also try to find by partial match (in case path format is different)
+  const searchKey = `slide_${slideNum}/${imageNameBase}`;
+  for (const [key, value] of Object.entries(allImageModules)) {
+    if (key.includes(searchKey)) {
+      return value as string;
+    }
+  }
+  
+  // Fallback to placeholder images
+  const fallbacks: Record<string, string> = {
+    'rugs': rugImage,
+    'placemat': placematImage,
+    'placemats': placematImage,
+    'runners': runnerImage,
+    'TableRunner': runnerImage,
+    'cushion': cushionImage,
+    'cushions': cushionImage,
+    'throw': throwImage,
+    'throws': throwImage,
+    'bedding': beddingImage,
+    'bathmats': bathmatImage,
+    'chairpads': chairpadImage,
+  };
+  
+  return fallbacks[category] || rugImage;
+}
 
 // ============================================================================
 // OLD PRODUCT DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
@@ -231,10 +339,16 @@ const productData: Record<string, {
 type Product = {
   id: string;
   src: string; // Main/primary image (for category grid - shown in category page)
-  images: string[]; // Array of 3 images for product detail page (auto-rotating carousel)
+  images: string[]; // Array of 2 images for product detail page (auto-rotating carousel)
   title: string;
-  description: string;
   tags: string[];
+  // Product specifications from data.json
+  styleNumber?: string; // e.g., "CHD-RG-1120"
+  productDescription?: string; // e.g., "RUG", "CUSHION" (from data.json description field)
+  technique?: string; // e.g., "WOVEN"
+  content?: string; // e.g., "COTTON + JUTE"
+  size?: string; // e.g., "24X36\""
+  season?: string; // e.g., "EVERYDAY"
 };
 
 // Category data structure (same as Category.tsx)
@@ -244,124 +358,197 @@ const categoryData: Record<string, {
 }> = {
   rugs: {
     name: "Rugs",
-    products: Array.from({ length: 42 }, (_, i) => ({
-      id: `rug-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleRug : rugImage, // Main image for category grid
-      // 3 images for product detail page carousel
-      images: [
-        i % 2 === 0 ? lifestyleRug : rugImage, // Image 1
-        rugImage, // Image 2 (placeholder - replace with actual image)
-        lifestyleRug, // Image 3 (placeholder - replace with actual image)
-      ],
-      title: `Handwoven Rug Type ${i + 1}`,
-      description: `Premium quality handwoven rug with unique design pattern ${i + 1}. Crafted with precision and care using traditional weaving techniques passed down through generations. Each piece is unique and adds warmth and character to any space. Available in various sizes and patterns to match your home decor.`,
-      tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
-    })),
+    products: Array.from({ length: 195 }, (_, i) => {
+      const slideNum = i + 1;
+      // Load data from JSON file (manually curated)
+      const data = getDataFromJson('rugs', slideNum) || {};
+      
+      return {
+        id: `rug-${slideNum}`,
+        src: getImageUrl('rugs', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('rugs', slideNum, 'image_01.jpg'),
+          getImageUrl('rugs', slideNum, 'image_02.jpg'),
+        ],
+        title: `Handwoven Rug ${slideNum}`,
+        tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
+        // Product specifications from data.json
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   placemats: {
     name: "Placemats",
-    products: Array.from({ length: 20 }, (_, i) => ({
-      id: `placemat-${i + 1}`,
-      src: i % 2 === 0 ? lifestylePlacemat : placematImage,
-      images: [
-        i % 2 === 0 ? lifestylePlacemat : placematImage,
-        placematImage,
-        lifestylePlacemat,
-      ],
-      title: `Elegant Placemat Set ${i + 1}`,
-      description: `Beautiful placemat set perfect for dining occasions. Set of ${4 + (i % 3)} pieces with elegant design. Transform your dining experience with our elegant placemats. Perfect for daily use or special occasions.`,
-      tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
-    })),
+    products: Array.from({ length: 25 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('placemat', slideNum) || {};
+      
+      return {
+        id: `placemat-${slideNum}`,
+        src: getImageUrl('placemat', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('placemat', slideNum, 'image_01.jpg'),
+          getImageUrl('placemat', slideNum, 'image_02.jpg'),
+        ],
+        title: `Elegant Placemat ${slideNum}`,
+        tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   runners: {
     name: "Table Runners",
-    products: Array.from({ length: 15 }, (_, i) => ({
-      id: `runner-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleRunner : runnerImage,
-      images: [
-        i % 2 === 0 ? lifestyleRunner : runnerImage,
-        runnerImage,
-        lifestyleRunner,
-      ],
-      title: `Table Runner Design ${i + 1}`,
-      description: `Elegant table runner to enhance your dining table. Available in various lengths and patterns. Add a touch of elegance to your dining table with our beautiful table runners. Premium quality fabric with versatile design.`,
-      tags: ["dining", "elegant", "table decor"],
-    })),
+    products: Array.from({ length: 19 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('TableRunner', slideNum) || {};
+      
+      return {
+        id: `runner-${slideNum}`,
+        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
+          getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
+        ],
+        title: `Table Runner ${slideNum}`,
+        tags: ["dining", "elegant", "table decor"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   cushions: {
     name: "Cushions",
-    products: Array.from({ length: 30 }, (_, i) => ({
-      id: `cushion-${i + 1}`,
-      src: cushionImage,
-      images: [
-        cushionImage,
-        cushionImage, // Replace with different angle/view
-        cushionImage, // Replace with different angle/view
-      ],
-      title: `Decorative Cushion ${i + 1}`,
-      description: `Comfortable and stylish cushion perfect for your living space. Available in multiple sizes and designs. Our decorative cushions add comfort and style to any room. Soft and comfortable with removable covers.`,
-      tags: ["decorative", "comfort", "living room"],
-    })),
+    products: Array.from({ length: 556 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('cushion', slideNum) || {};
+      
+      return {
+        id: `cushion-${slideNum}`,
+        src: getImageUrl('cushion', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('cushion', slideNum, 'image_01.jpg'),
+          getImageUrl('cushion', slideNum, 'image_02.jpg'),
+        ],
+        title: `Decorative Cushion ${slideNum}`,
+        tags: ["decorative", "comfort", "living room"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   throws: {
     name: "Throws",
-    products: Array.from({ length: 18 }, (_, i) => ({
-      id: `throw-${i + 1}`,
-      src: throwImage,
-      images: [
-        throwImage,
-        throwImage, // Replace with different angle/view
-        throwImage, // Replace with different angle/view
-      ],
-      title: `Cozy Throw Blanket ${i + 1}`,
-      description: `Soft and warm throw blanket for ultimate comfort. Perfect for snuggling on the couch. Wrap yourself in comfort with our cozy throws. Super soft texture, lightweight yet warm, and machine washable.`,
-      tags: ["soft", "cozy", "blanket"],
-    })),
+    products: Array.from({ length: 147 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('throw', slideNum) || {};
+      
+      return {
+        id: `throw-${slideNum}`,
+        src: getImageUrl('throw', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('throw', slideNum, 'image_01.jpg'),
+          getImageUrl('throw', slideNum, 'image_02.jpg'),
+        ],
+        title: `Cozy Throw ${slideNum}`,
+        tags: ["soft", "cozy", "blanket"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   bedding: {
     name: "Premium Bedding",
-    products: Array.from({ length: 25 }, (_, i) => ({
-      id: `bedding-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleBedding : beddingImage,
-      images: [
-        i % 2 === 0 ? lifestyleBedding : beddingImage,
-        beddingImage,
-        lifestyleBedding,
-      ],
-      title: `Premium Bedding Set ${i + 1}`,
-      description: `Luxury bedding collection for a comfortable night's sleep. High thread count and premium materials. Experience luxury every night with our premium bedding collections. Breathable fabric with complete bedding sets available.`,
-      tags: ["luxury", "bedroom", "comfortable"],
-    })),
+    products: Array.from({ length: 42 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('bedding', slideNum) || {};
+      
+      return {
+        id: `bedding-${slideNum}`,
+        src: getImageUrl('bedding', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('bedding', slideNum, 'image_01.jpg'),
+          getImageUrl('bedding', slideNum, 'image_02.jpg'),
+        ],
+        title: `Premium Bedding ${slideNum}`,
+        tags: ["luxury", "bedroom", "comfortable"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   }, 
   bathmats: {
     name: "Bath Mats",
-    products: Array.from({ length: 12 }, (_, i) => ({
-      id: `bathmat-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-      images: [
-        i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-        bathmatImage,
-        lifestyleBathmat,
-      ],
-      title: `Spa Bath Mat ${i + 1}`,
-      description: `Highly absorbent and quick-drying bath mat. Bring spa-like luxury to your bathroom. Our premium bath mats are soft on feet with non-slip backing for safety.`,
-      tags: ["spa", "bathroom", "absorbent"],
-    })),
+    products: Array.from({ length: 12 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('bathmat', slideNum) || {};
+      
+      return {
+        id: `bathmat-${slideNum}`,
+        src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
+        images: [
+          i % 2 === 0 ? lifestyleBathmat : bathmatImage,
+          bathmatImage,
+        ],
+        title: `Spa Bath Mat ${slideNum}`,
+        tags: ["spa", "bathroom", "absorbent"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
   chairpads: {
     name: "Chair Pads",
-    products: Array.from({ length: 10 }, (_, i) => ({
-      id: `chairpad-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-      images: [
-        i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-        chairpadImage,
-        lifestyleChairpad,
-      ],
-      title: `Chair Pad Set ${i + 1}`,
-      description: `Comfortable chair pads for your dining chairs. Available in various colors and patterns. Add comfort to your dining chairs with our chair pads. Cushioned comfort with tie fasteners and reversible designs.`,
-      tags: ["decorative", "comfortable", "cushion"],
-    })),
+    products: Array.from({ length: 10 }, (_, i) => {
+      const slideNum = i + 1;
+      const data = getDataFromJson('chairpad', slideNum) || {};
+      
+      return {
+        id: `chairpad-${slideNum}`,
+        src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
+        images: [
+          i % 2 === 0 ? lifestyleChairpad : chairpadImage,
+          chairpadImage,
+        ],
+        title: `Chair Pad ${slideNum}`,
+        tags: ["decorative", "comfortable", "cushion"],
+        styleNumber: data.styleNumber,
+        productDescription: data.description,
+        technique: data.technique,
+        content: data.content,
+        size: data.size,
+        season: data.season,
+      };
+    }),
   },
 };
 
@@ -500,21 +687,22 @@ export default function ProductDetail() {
       <div className="absolute md:fixed top-4 right-4 md:top-6 md:right-6 z-[60]">
         <button
           onClick={handleBack}
-          className="p-2.5 md:p-3 bg-background/95 backdrop-blur-md border border-border rounded-full hover:bg-accent/10 transition-colors shadow-lg"
+          className="flex items-center gap-2 px-3 py-2 md:px-4 md:py-2.5 bg-background/95 backdrop-blur-md border border-border rounded-3xl hover:bg-accent/10 transition-colors shadow-lg"
           aria-label="Go back"
         >
-          <X className="w-4 h-4 md:w-5 md:h-5" />
+          <ArrowLeft className="w-4 h-4 md:w-5 md:h-5" />
+          <span className="text-sm md:text-base font-medium">Back</span>
         </button>
       </div>
 
       {/* Main Content - Mobile optimized with proper spacing */}
       <div className="flex-1 w-full pt-4 md:pt-6 pb-6 md:pb-6 overflow-y-auto relative">
         <div className="max-w-7xl mx-auto w-full px-4 md:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 lg:gap-12">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 lg:gap-12 lg:items-start">
             {/* Left Side - Product Image Gallery - Mobile optimized */}
-            <div className="flex flex-col space-y-3 md:space-y-4 lg:space-y-6 lg:h-[calc(100vh-3rem)] lg:justify-center pt-12 md:pt-0">
+            <div className="flex flex-col space-y-3 md:space-y-4 lg:space-y-4 pt-12 md:pt-6 lg:pt-8">
               {/* Main Image - Auto-rotating with Smooth Crossfade Transition */}
-              <div className="relative w-full aspect-square md:aspect-square lg:flex-1 lg:min-h-0 rounded-xl md:rounded-2xl overflow-hidden border-2 border-border bg-card shadow-lg group">
+              <div className="relative w-full aspect-square md:aspect-square lg:aspect-[4/5] lg:max-h-[70vh] rounded-xl md:rounded-2xl overflow-hidden border-2 border-border bg-card shadow-lg group">
               {/* Static background image to prevent white space */}
               <img
                 src={product.images[selectedImageIndex]}
@@ -577,48 +765,77 @@ export default function ProductDetail() {
                 </button>
               ))}
             </div>
-          </div>
+            </div>
 
-          {/* Right Side - Product Information - Mobile optimized */}
-          <div className="flex flex-col space-y-4 md:space-y-5 lg:space-y-6 lg:h-[calc(100vh-3rem)] lg:justify-center">
-            {/* Category Name */}
-            <div>
-              <p className="text-xs md:text-sm text-muted-foreground mb-1 md:mb-2">{category.name}</p>
-              <h1 className="text-2xl md:text-3xl lg:text-4xl font-medium mb-3 md:mb-4 leading-tight">{product.title}</h1>
-              
-              {/* Rating - COMMENTED OUT, CAN BE ENABLED IF NEEDED */}
-              {/* 
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 bg-yellow-50 dark:bg-yellow-950 px-2 py-1 rounded">
-                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                  <span className="text-sm font-medium">{product.rating}</span>
+          {/* Right Side - Product Information - Compact layout */}
+          <div className="flex flex-col space-y-3 md:space-y-4 pt-12 md:pt-6 lg:pt-8">
+            {/* Product Specifications Table */}
+            {(product.styleNumber || product.productDescription || product.technique || product.content || product.size || product.season) && (
+              <div className="border border-border rounded-lg overflow-hidden">
+                <div className="divide-y divide-border">
+                  {product.styleNumber && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">STYLE #</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.styleNumber}</span>
+                      </div>
+                    </div>
+                  )}
+                  {product.productDescription && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">DESCRIPTION</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.productDescription}</span>
+                      </div>
+                    </div>
+                  )}
+                  {product.technique && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">TECHNIQUE</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.technique}</span>
+                      </div>
+                    </div>
+                  )}
+                  {product.content && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">CONTENT</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.content}</span>
+                      </div>
+                    </div>
+                  )}
+                  {product.size && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">SIZE</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.size}</span>
+                      </div>
+                    </div>
+                  )}
+                  {product.season && (
+                    <div className="grid grid-cols-2">
+                      <div className="bg-background px-3 md:px-4 py-2 md:py-2.5 border-r border-border">
+                        <span className="text-xs md:text-sm font-medium text-foreground">SEASON</span>
+                      </div>
+                      <div className="bg-muted/50 px-3 md:px-4 py-2 md:py-2.5">
+                        <span className="text-xs md:text-sm text-foreground">{product.season}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <span className="text-sm text-muted-foreground">
-                  {product.reviews} reviews
-                </span>
               </div>
-              */}
-            </div>
-
-            {/* Description */}
-            <div className="border-t border-b border-border py-4 md:py-6">
-              <p className="text-sm md:text-base text-muted-foreground leading-relaxed">{product.description}</p>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <h3 className="text-xs md:text-sm font-medium mb-2 md:mb-3">Features</h3>
-              <div className="flex flex-wrap gap-2">
-                {product.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="px-2.5 py-1 md:px-3 md:py-1.5 bg-muted rounded-md text-xs md:text-sm"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
+            )}
 
             {/* Materials - COMMENTED OUT, CAN BE ENABLED LATER */}
             {/* 
@@ -682,18 +899,18 @@ export default function ProductDetail() {
             </div>
             */}
 
-            {/* Quality Badge */}
-            <div className="flex items-center gap-2 p-3 md:p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
+            {/* Quality Badge - Compact */}
+            <div className="flex items-center gap-2 p-2.5 md:p-3 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
               <div className="flex items-center gap-2 text-xs md:text-sm text-green-700 dark:text-green-300">
-                <svg className="w-4 h-4 md:w-5 md:h-5" fill="currentColor" viewBox="0 0 20 20">
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                   <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                 </svg>
                 <span className="font-medium">Best Quality Guaranteed</span>
               </div>
             </div>
 
-            {/* Contact Button - Mobile optimized */}
-            <div className="space-y-2 md:space-y-3">
+            {/* Contact Button - Compact */}
+            <div className="space-y-1.5 md:space-y-2">
               <motion.button
                 onClick={() => setShowContactForm(true)}
                 className="group relative w-full px-5 md:px-8 py-3 md:py-4 bg-slate-800 text-white rounded-full overflow-hidden hover:bg-slate-700 transition-all duration-300 flex items-center justify-center gap-2 font-medium text-sm md:text-base lg:text-lg shadow-lg"
@@ -810,29 +1027,29 @@ export default function ProductDetail() {
 
       {/* Contact Form Modal - Matching "Start a Conversation" */}
       {showContactForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-start md:items-center justify-center z-50 p-0 md:p-4 overflow-hidden">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-card rounded-2xl p-6 md:p-8 max-w-md w-full max-h-[90vh] overflow-y-auto"
+            className="bg-white dark:bg-card rounded-none md:rounded-2xl p-4 md:p-6 max-w-xl w-full h-screen md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden"
           >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-light text-slate-900 dark:text-foreground">Get in Touch</h3>
+            <div className="flex justify-between items-center mb-3 md:mb-4 flex-shrink-0">
+              <h3 className="text-xl md:text-2xl font-light text-slate-900 dark:text-foreground">Get in Touch</h3>
               <button
                 onClick={() => {
                   setShowContactForm(false);
                   setSubmitStatus(null);
                   setFormData({ name: "", email: "", phone: "", company: "", message: "" });
                 }}
-                className="text-slate-400 hover:text-slate-900 dark:hover:text-foreground text-2xl transition-colors"
+                className="text-slate-400 hover:text-slate-900 dark:hover:text-foreground text-xl md:text-2xl transition-colors"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-4">
+            <form onSubmit={handleFormSubmit} className="space-y-2.5 md:space-y-3 flex-1 flex flex-col min-h-0">
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Name *
                 </label>
                 <input
@@ -841,12 +1058,12 @@ export default function ProductDetail() {
                   value={formData.name}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Email *
                 </label>
                 <input
@@ -855,12 +1072,12 @@ export default function ProductDetail() {
                   value={formData.email}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Phone
                 </label>
                 <input
@@ -868,12 +1085,12 @@ export default function ProductDetail() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleFormChange}
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Company
                 </label>
                 <input
@@ -881,12 +1098,12 @@ export default function ProductDetail() {
                   name="company"
                   value={formData.company}
                   onChange={handleFormChange}
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
+                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
                   Message *
                 </label>
                 <textarea
@@ -894,19 +1111,19 @@ export default function ProductDetail() {
                   value={formData.message}
                   onChange={handleFormChange}
                   required
-                  rows={4}
-                  className="w-full px-4 py-2 border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none resize-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  rows={2}
+                  className="w-full h-20 md:h-24 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none resize-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               {submitStatus === 'success' && (
-                <div className="p-4 bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg">
+                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg">
                   Thank you! We'll get back to you soon.
                 </div>
               )}
 
               {submitStatus === 'error' && (
-                <div className="p-4 bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg">
+                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg">
                   Something went wrong. Please try again.
                 </div>
               )}
@@ -914,7 +1131,7 @@ export default function ProductDetail() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-slate-900 dark:bg-slate-800 text-white py-3 rounded-lg hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full bg-slate-900 dark:bg-slate-800 text-white py-2 md:py-2.5 text-sm md:text-base rounded-lg hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
               >
                 {isSubmitting ? 'Sending...' : 'Send Message'}
               </button>

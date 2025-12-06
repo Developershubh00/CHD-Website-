@@ -17,6 +17,116 @@ import lifestyleBedding from "@/assets/lifestyle-bedding.jpg";
 import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
 import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
 
+// Pre-load all product images using Vite's import.meta.glob
+// Using eager: true to pre-load all images synchronously
+// Match both jpg and png files
+const imageModulesJpg = import.meta.glob('/src/assets/**/image_*.jpg', { 
+  eager: true,
+  import: 'default'
+}) as Record<string, string>;
+
+const imageModulesPng = import.meta.glob('/src/assets/**/image_*.png', { 
+  eager: true,
+  import: 'default'
+}) as Record<string, string>;
+
+// Combine both modules
+const allImageModules = { ...imageModulesJpg, ...imageModulesPng };
+
+// Pre-load all specs.json files (fast JSON loading - no OCR in production!)
+const specsModules = import.meta.glob('/src/assets/**/specs.json', {
+  eager: true,
+  import: 'default'
+}) as Record<string, {
+  styleNumber?: string;
+  technique?: string;
+  content?: string;
+  size?: string;
+  season?: string;
+  theme?: string;
+  country?: string;
+}>;
+
+// Helper function to get specs from JSON file
+function getSpecsFromJson(category: string, slideNumber: number) {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  
+  // Try different path variations
+  const pathVariations = [
+    `/src/assets/${category}/slide_${slideNum}/specs.json`,
+    `./src/assets/${category}/slide_${slideNum}/specs.json`,
+    `src/assets/${category}/slide_${slideNum}/specs.json`,
+  ];
+  
+  // Try to find the specs file
+  for (const path of pathVariations) {
+    if (specsModules[path]) {
+      return specsModules[path];
+    }
+  }
+  
+  // Also try partial match
+  const searchKey = `slide_${slideNum}/specs.json`;
+  for (const [key, value] of Object.entries(specsModules)) {
+    if (key.includes(searchKey)) {
+      return value;
+    }
+  }
+  
+  return null;
+}
+
+// Helper function to get image URL dynamically
+function getImageUrl(category: string, slideNumber: number, imageName: string): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  
+  // Try both .jpg and .png extensions
+  const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
+  
+  // Vite's glob might use different path formats, try multiple variations
+  const pathVariations = [
+    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
+    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
+  ];
+  
+  // Try to find the image in the pre-loaded modules
+  for (const path of pathVariations) {
+    if (allImageModules[path]) {
+      return allImageModules[path] as string;
+    }
+  }
+  
+  // Also try to find by partial match (in case path format is different)
+  const searchKey = `slide_${slideNum}/${imageNameBase}`;
+  for (const [key, value] of Object.entries(allImageModules)) {
+    if (key.includes(searchKey)) {
+      return value as string;
+    }
+  }
+  
+  // Fallback to placeholder images
+  const fallbacks: Record<string, string> = {
+    'rugs': rugImage,
+    'placemat': placematImage,
+    'placemats': placematImage,
+    'runners': runnerImage,
+    'TableRunner': runnerImage,
+    'cushion': cushionImage,
+    'cushions': cushionImage,
+    'throw': throwImage,
+    'throws': throwImage,
+    'bedding': beddingImage,
+    'bathmats': bathmatImage,
+    'chairpads': chairpadImage,
+  };
+  
+  return fallbacks[category] || rugImage;
+}
+
 // ============================================================================
 // OLD DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
 // This was the original structure that used "images" array instead of "products"
@@ -87,10 +197,18 @@ const categoryData: Record<string, { name: string; images: Array<{ src: string; 
 type Product = {
   id: string;
   src: string; // Main/primary image (for category grid)
-  images?: string[]; // Array of 3 images for product detail page (optional for category page)
+  images?: string[]; // Array of 2 images for product detail page (optional for category page)
   title: string;
   description: string;
   tags: string[];
+  // Product specifications
+  styleNumber?: string; // e.g., "CHD-RG-1120"
+  technique?: string; // e.g., "WOVEN"
+  content?: string; // e.g., "COTTON + JUTE"
+  size?: string; // e.g., "24X36\""
+  season?: string; // e.g., "EVERYDAY"
+  theme?: string; // Optional
+  country?: string; // Optional
 };
 
 // Category data structure - each category has multiple products
@@ -100,72 +218,178 @@ const categoryData: Record<string, {
 }> = {
   rugs: {
     name: "Rugs",
-    products: Array.from({ length: 42 }, (_, i) => ({
-      id: `rug-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleRug : rugImage, // Alternate between images for demo
-      title: `Handwoven Rug Type ${i + 1}`,
-      description: `Premium quality handwoven rug with unique design pattern ${i + 1}. Crafted with precision and care using traditional weaving techniques.`,
-      tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
-    })),
+    products: Array.from({ length: 195 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('rugs', slideNum) || {};
+      
+      return {
+        id: `rug-${slideNum}`,
+        src: getImageUrl('rugs', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('rugs', slideNum, 'image_01.jpg'),
+          getImageUrl('rugs', slideNum, 'image_02.jpg'),
+        ],
+        title: `Handwoven Rug Type ${slideNum}`,
+        description: `Premium quality handwoven rug with unique design pattern ${slideNum}. Crafted with precision and care using traditional weaving techniques.`,
+        tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
+        styleNumber: specs.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON + JUTE",
+        size: specs.size || (i % 4 === 0 ? "24X36\"" : i % 4 === 1 ? "36X48\"" : i % 4 === 2 ? "48X72\"" : "60X84\""),
+        season: specs.season || "EVERYDAY",
+        theme: specs.theme || (i % 2 === 0 ? "MODERN" : "TRADITIONAL"),
+        country: specs.country || "INDIA",
+      };
+    }),
   },
   placemats: {
     name: "Placemats",
-    products: Array.from({ length: 20 }, (_, i) => ({
-      id: `placemat-${i + 1}`,
-      src: i % 2 === 0 ? lifestylePlacemat : placematImage,
-      title: `Elegant Placemat Set ${i + 1}`,
-      description: `Beautiful placemat set perfect for dining occasions. Set of ${4 + (i % 3)} pieces with elegant design.`,
-      tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
-    })),
+    products: Array.from({ length: 25 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('placemat', slideNum) || {};
+      
+      return {
+        id: `placemat-${slideNum}`,
+        src: getImageUrl('placemat', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('placemat', slideNum, 'image_01.jpg'),
+          getImageUrl('placemat', slideNum, 'image_02.jpg'),
+        ],
+        title: `Elegant Placemat Set ${slideNum}`,
+        description: `Beautiful placemat set perfect for dining occasions. Set of ${4 + (i % 3)} pieces with elegant design.`,
+        tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
+        styleNumber: specs.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON + LINEN",
+        size: specs.size || "13X18\"",
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+        theme: specs.theme,
+      };
+    }),
   },
   runners: {
     name: "Table Runners",
-    products: Array.from({ length: 15 }, (_, i) => ({
-      id: `runner-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleRunner : runnerImage,
-      title: `Table Runner Design ${i + 1}`,
-      description: `Elegant table runner to enhance your dining table. Available in various lengths and patterns.`,
-      tags: ["dining", "elegant", "table decor"],
-    })),
+    products: Array.from({ length: 19 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('TableRunner', slideNum) || {};
+      
+      return {
+        id: `runner-${slideNum}`,
+        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
+          getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
+        ],
+        title: `Table Runner Design ${slideNum}`,
+        description: `Elegant table runner to enhance your dining table. Available in various lengths and patterns.`,
+        tags: ["dining", "elegant", "table decor"],
+        styleNumber: specs.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON + JUTE",
+        size: specs.size || (i % 3 === 0 ? "72\"" : i % 3 === 1 ? "90\"" : "108\""),
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+        theme: specs.theme,
+      };
+    }),
   },
   cushions: {
     name: "Cushions",
-    products: Array.from({ length: 30 }, (_, i) => ({
-      id: `cushion-${i + 1}`,
-      src: cushionImage,
-      title: `Decorative Cushion ${i + 1}`,
-      description: `Comfortable and stylish cushion perfect for your living space. Available in multiple sizes and designs.`,
-      tags: ["decorative", "comfort", "living room"],
-    })),
+    products: Array.from({ length: 556 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('cushion', slideNum) || {};
+      
+      return {
+        id: `cushion-${slideNum}`,
+        src: getImageUrl('cushion', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('cushion', slideNum, 'image_01.jpg'),
+          getImageUrl('cushion', slideNum, 'image_02.jpg'),
+        ],
+        title: `Decorative Cushion ${slideNum}`,
+        description: `Comfortable and stylish cushion perfect for your living space. Available in multiple sizes and designs.`,
+        tags: ["decorative", "comfort", "living room"],
+        styleNumber: specs.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON",
+        size: specs.size || (i % 4 === 0 ? "12X12\"" : i % 4 === 1 ? "16X16\"" : i % 4 === 2 ? "18X18\"" : "20X20\""),
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+        theme: specs.theme,
+      };
+    }),
   },
   throws: {
     name: "Throws",
-    products: Array.from({ length: 18 }, (_, i) => ({
-      id: `throw-${i + 1}`,
-      src: throwImage,
-      title: `Cozy Throw Blanket ${i + 1}`,
-      description: `Soft and warm throw blanket for ultimate comfort. Perfect for snuggling on the couch.`,
-      tags: ["soft", "cozy", "blanket"],
-    })),
+    products: Array.from({ length: 147 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('throw', slideNum) || {};
+      
+      return {
+        id: `throw-${slideNum}`,
+        src: getImageUrl('throw', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('throw', slideNum, 'image_01.jpg'),
+          getImageUrl('throw', slideNum, 'image_02.jpg'),
+        ],
+        title: `Cozy Throw Blanket ${slideNum}`,
+        description: `Soft and warm throw blanket for ultimate comfort. Perfect for snuggling on the couch.`,
+        tags: ["soft", "cozy", "blanket"],
+        styleNumber: specs.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON + ACRYLIC",
+        size: specs.size || (i % 2 === 0 ? "50X60\"" : "60X80\""),
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+        theme: specs.theme,
+      };
+    }),
   },
   bedding: {
     name: "Premium Bedding",
-    products: Array.from({ length: 25 }, (_, i) => ({
-      id: `bedding-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleBedding : beddingImage,
-      title: `Premium Bedding Set ${i + 1}`,
-      description: `Luxury bedding collection for a comfortable night's sleep. High thread count and premium materials.`,
-      tags: ["luxury", "bedroom", "comfortable"],
-    })),
+    products: Array.from({ length: 42 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getSpecsFromJson('bedding', slideNum) || {};
+      
+      return {
+        id: `bedding-${slideNum}`,
+        src: getImageUrl('bedding', slideNum, 'image_01.jpg'),
+        images: [
+          getImageUrl('bedding', slideNum, 'image_01.jpg'),
+          getImageUrl('bedding', slideNum, 'image_02.jpg'),
+        ],
+        title: `Premium Bedding Set ${slideNum}`,
+        description: `Luxury bedding collection for a comfortable night's sleep. High thread count and premium materials.`,
+        tags: ["luxury", "bedroom", "comfortable"],
+        styleNumber: specs.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
+        technique: specs.technique || "WOVEN",
+        content: specs.content || "COTTON",
+        size: specs.size || (i % 4 === 0 ? "TWIN" : i % 4 === 1 ? "FULL" : i % 4 === 2 ? "QUEEN" : "KING"),
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+        theme: specs.theme,
+      };
+    }),
   }, 
   bathmats: {
     name: "Bath Mats",
     products: Array.from({ length: 12 }, (_, i) => ({
       id: `bathmat-${i + 1}`,
       src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
+      images: [
+        i % 2 === 0 ? lifestyleBathmat : bathmatImage,
+        bathmatImage, // Image 2 (replace with actual product image)
+      ],
       title: `Spa Bath Mat ${i + 1}`,
       description: `Highly absorbent and quick-drying bath mat. Bring spa-like luxury to your bathroom.`,
       tags: ["spa", "bathroom", "absorbent"],
+      styleNumber: `CHD-BM-${String(i + 1).padStart(4, '0')}`,
+      technique: "WOVEN",
+      content: "COTTON + MICROFIBER",
+      size: i % 2 === 0 ? "20X30\"" : "24X36\"",
+      season: "EVERYDAY",
+      country: "INDIA",
     })),
   },
   chairpads: {
@@ -173,9 +397,19 @@ const categoryData: Record<string, {
     products: Array.from({ length: 10 }, (_, i) => ({
       id: `chairpad-${i + 1}`,
       src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
+      images: [
+        i % 2 === 0 ? lifestyleChairpad : chairpadImage,
+        chairpadImage, // Image 2 (replace with actual product image)
+      ],
       title: `Chair Pad Set ${i + 1}`,
       description: `Comfortable chair pads for your dining chairs. Available in various colors and patterns.`,
       tags: ["dining", "comfortable", "cushion"],
+      styleNumber: `CHD-CP-${String(i + 1).padStart(4, '0')}`,
+      technique: "WOVEN",
+      content: "COTTON + POLYESTER",
+      size: "STANDARD",
+      season: "EVERYDAY",
+      country: "INDIA",
     })),
   },
 };
@@ -202,7 +436,7 @@ const Category = () => {
   }, [category, searchQuery]);
 
   const handleProductClick = (productId: string) => {
-    navigate(`/category/${categoryId}/product/${productId}`);
+    navigate(`/category/${categoryId}/${productId}`);
   };
 
   // ============================================================================

@@ -130,6 +130,15 @@ All colors MUST be HSL.
     animation: fadeIn 1.5s ease-in-out 0.3s both;
   }
   
+  .scrollbar-hide {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
+  
   @keyframes fadeIn {
     from {
       opacity: 0;
