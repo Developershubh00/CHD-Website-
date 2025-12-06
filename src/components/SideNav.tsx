@@ -18,11 +18,11 @@ export const SideNav = () => {
 
   return (
     <>
-      {/* Mobile Menu Button */}
+      {/* Mobile Menu Button - Static on mobile, fixed on desktop */}
       <Button
         variant="ghost"
         size="icon"
-        className="fixed top-4 left-4 z-50 md:hidden bg-background/80 backdrop-blur-sm"
+        className="absolute md:fixed top-4 left-4 z-50 md:z-50 md:hidden bg-background/80 backdrop-blur-sm"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}

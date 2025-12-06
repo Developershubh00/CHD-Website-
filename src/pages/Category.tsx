@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import rugImage from "@/assets/product-rug.png";
@@ -17,6 +17,11 @@ import lifestyleBedding from "@/assets/lifestyle-bedding.jpg";
 import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
 import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
 
+// ============================================================================
+// OLD DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
+// This was the original structure that used "images" array instead of "products"
+// ============================================================================
+/*
 const categoryData: Record<string, { name: string; images: Array<{ src: string; title: string; tags: string[] }> }> = {
   rugs: {
     name: "Rugs",
@@ -57,7 +62,7 @@ const categoryData: Record<string, { name: string; images: Array<{ src: string; 
       { src: lifestyleBedding, title: "Luxurious Bedding Collection", tags: ["luxury", "bedroom", "comfortable"] },
       { src: beddingImage, title: "Premium Bedding Set", tags: ["premium", "bedding", "set"] },
     ],
-  },
+  }, 
   bathmats: {
     name: "Bath Mats",
     images: [
@@ -73,26 +78,138 @@ const categoryData: Record<string, { name: string; images: Array<{ src: string; 
     ],
   },
 };
+*/
+// ============================================================================
+// END OF OLD DATA STRUCTURE
+// ============================================================================
+
+// Product type definition (matching ProductDetail.tsx)
+type Product = {
+  id: string;
+  src: string; // Main/primary image (for category grid)
+  images?: string[]; // Array of 3 images for product detail page (optional for category page)
+  title: string;
+  description: string;
+  tags: string[];
+};
+
+// Category data structure - each category has multiple products
+const categoryData: Record<string, { 
+  name: string; 
+  products: Product[];
+}> = {
+  rugs: {
+    name: "Rugs",
+    products: Array.from({ length: 42 }, (_, i) => ({
+      id: `rug-${i + 1}`,
+      src: i % 2 === 0 ? lifestyleRug : rugImage, // Alternate between images for demo
+      title: `Handwoven Rug Type ${i + 1}`,
+      description: `Premium quality handwoven rug with unique design pattern ${i + 1}. Crafted with precision and care using traditional weaving techniques.`,
+      tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
+    })),
+  },
+  placemats: {
+    name: "Placemats",
+    products: Array.from({ length: 20 }, (_, i) => ({
+      id: `placemat-${i + 1}`,
+      src: i % 2 === 0 ? lifestylePlacemat : placematImage,
+      title: `Elegant Placemat Set ${i + 1}`,
+      description: `Beautiful placemat set perfect for dining occasions. Set of ${4 + (i % 3)} pieces with elegant design.`,
+      tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
+    })),
+  },
+  runners: {
+    name: "Table Runners",
+    products: Array.from({ length: 15 }, (_, i) => ({
+      id: `runner-${i + 1}`,
+      src: i % 2 === 0 ? lifestyleRunner : runnerImage,
+      title: `Table Runner Design ${i + 1}`,
+      description: `Elegant table runner to enhance your dining table. Available in various lengths and patterns.`,
+      tags: ["dining", "elegant", "table decor"],
+    })),
+  },
+  cushions: {
+    name: "Cushions",
+    products: Array.from({ length: 30 }, (_, i) => ({
+      id: `cushion-${i + 1}`,
+      src: cushionImage,
+      title: `Decorative Cushion ${i + 1}`,
+      description: `Comfortable and stylish cushion perfect for your living space. Available in multiple sizes and designs.`,
+      tags: ["decorative", "comfort", "living room"],
+    })),
+  },
+  throws: {
+    name: "Throws",
+    products: Array.from({ length: 18 }, (_, i) => ({
+      id: `throw-${i + 1}`,
+      src: throwImage,
+      title: `Cozy Throw Blanket ${i + 1}`,
+      description: `Soft and warm throw blanket for ultimate comfort. Perfect for snuggling on the couch.`,
+      tags: ["soft", "cozy", "blanket"],
+    })),
+  },
+  bedding: {
+    name: "Premium Bedding",
+    products: Array.from({ length: 25 }, (_, i) => ({
+      id: `bedding-${i + 1}`,
+      src: i % 2 === 0 ? lifestyleBedding : beddingImage,
+      title: `Premium Bedding Set ${i + 1}`,
+      description: `Luxury bedding collection for a comfortable night's sleep. High thread count and premium materials.`,
+      tags: ["luxury", "bedroom", "comfortable"],
+    })),
+  }, 
+  bathmats: {
+    name: "Bath Mats",
+    products: Array.from({ length: 12 }, (_, i) => ({
+      id: `bathmat-${i + 1}`,
+      src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
+      title: `Spa Bath Mat ${i + 1}`,
+      description: `Highly absorbent and quick-drying bath mat. Bring spa-like luxury to your bathroom.`,
+      tags: ["spa", "bathroom", "absorbent"],
+    })),
+  },
+  chairpads: {
+    name: "Chair Pads",
+    products: Array.from({ length: 10 }, (_, i) => ({
+      id: `chairpad-${i + 1}`,
+      src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
+      title: `Chair Pad Set ${i + 1}`,
+      description: `Comfortable chair pads for your dining chairs. Available in various colors and patterns.`,
+      tags: ["dining", "comfortable", "cushion"],
+    })),
+  },
+};
 
 const Category = () => {
   const { categoryId } = useParams<{ categoryId: string }>();
+  const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  // const [selectedIndex, setSelectedIndex] = useState<number | null>(null); // For gallery modal (commented out)
 
   const category = categoryId ? categoryData[categoryId] : null;
 
-  const filteredImages = useMemo(() => {
+  const filteredProducts = useMemo(() => {
     if (!category) return [];
-    if (!searchQuery.trim()) return category.images;
+    if (!searchQuery.trim()) return category.products;
 
     const query = searchQuery.toLowerCase();
-    return category.images.filter(
-      (image) =>
-        image.title.toLowerCase().includes(query) ||
-        image.tags.some((tag) => tag.toLowerCase().includes(query))
+    return category.products.filter(
+      (product) =>
+        product.title.toLowerCase().includes(query) ||
+        product.description.toLowerCase().includes(query) ||
+        product.tags.some((tag) => tag.toLowerCase().includes(query))
     );
   }, [category, searchQuery]);
 
+  const handleProductClick = (productId: string) => {
+    navigate(`/category/${categoryId}/product/${productId}`);
+  };
+
+  // ============================================================================
+  // OLD GALLERY MODAL FUNCTIONS - COMMENTED OUT BUT PRESERVED
+  // These were used when clicking images opened a fullscreen gallery modal
+  // ============================================================================
+  /*
   const openGallery = (index: number) => {
     setSelectedIndex(index);
     document.body.style.overflow = "hidden";
@@ -105,13 +222,13 @@ const Category = () => {
 
   const goToPrevious = () => {
     if (selectedIndex !== null) {
-      setSelectedIndex((selectedIndex - 1 + filteredImages.length) % filteredImages.length);
+      setSelectedIndex((selectedIndex - 1 + filteredProducts.length) % filteredProducts.length);
     }
   };
 
   const goToNext = () => {
     if (selectedIndex !== null) {
-      setSelectedIndex((selectedIndex + 1) % filteredImages.length);
+      setSelectedIndex((selectedIndex + 1) % filteredProducts.length);
     }
   };
 
@@ -120,6 +237,10 @@ const Category = () => {
     if (e.key === "ArrowLeft") goToPrevious();
     if (e.key === "ArrowRight") goToNext();
   };
+  */
+  // ============================================================================
+  // END OF OLD GALLERY MODAL FUNCTIONS
+  // ============================================================================
 
   if (!category) {
     return (
@@ -172,26 +293,26 @@ const Category = () => {
             </div>
           </div>
 
-          {/* Images Grid */}
-          {filteredImages.length > 0 ? (
+          {/* Products Grid */}
+          {filteredProducts.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredImages.map((image, index) => (
+              {filteredProducts.map((product) => (
                 <div
-                  key={index}
-                  onClick={() => openGallery(index)}
+                  key={product.id}
+                  onClick={() => handleProductClick(product.id)}
                   className="group relative aspect-square overflow-hidden bg-card border border-border cursor-pointer transition-all hover:border-accent hover:shadow-lg"
                 >
                   <img
-                    src={image.src}
-                    alt={image.title}
+                    src={product.src}
+                    alt={product.title}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
                     <div>
-                      <h3 className="text-lg font-light text-foreground mb-2">{image.title}</h3>
+                      <h3 className="text-lg font-light text-foreground mb-2">{product.title}</h3>
                       <div className="flex flex-wrap gap-2">
-                        {image.tags.slice(0, 3).map((tag) => (
-                          <span key={tag} className="text-xs px-2 py-1 bg-accent/20 text-accent rounded">
+                        {product.tags.slice(0, 3).map((tag, idx) => (
+                          <span key={idx} className="text-xs px-2 py-1 bg-accent/20 text-accent rounded">
                             {tag}
                           </span>
                         ))}
@@ -203,7 +324,7 @@ const Category = () => {
             </div>
           ) : (
             <div className="text-center py-20">
-              <p className="text-muted-foreground text-lg">No designs found matching "{searchQuery}"</p>
+              <p className="text-muted-foreground text-lg">No products found matching "{searchQuery}"</p>
               <button
                 onClick={() => setSearchQuery("")}
                 className="mt-4 text-accent hover:underline"
@@ -215,7 +336,11 @@ const Category = () => {
         </div>
       </div>
 
-      {/* Fullscreen Modal */}
+      {/* ============================================================================
+          OLD FULLSCREEN GALLERY MODAL - COMMENTED OUT BUT PRESERVED
+          This was the modal that opened when clicking images before
+          ============================================================================ */}
+      {/* 
       {selectedIndex !== null && (
         <div
           className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center"
@@ -245,14 +370,14 @@ const Category = () => {
 
           <div className="max-w-5xl max-h-[90vh] w-full mx-6 flex flex-col">
             <img
-              src={filteredImages[selectedIndex].src}
-              alt={filteredImages[selectedIndex].title}
+              src={filteredProducts[selectedIndex].src}
+              alt={filteredProducts[selectedIndex].title}
               className="w-full h-auto object-contain"
             />
             <div className="mt-6 text-center">
-              <h3 className="text-2xl font-light mb-2">{filteredImages[selectedIndex].title}</h3>
+              <h3 className="text-2xl font-light mb-2">{filteredProducts[selectedIndex].title}</h3>
               <div className="flex flex-wrap gap-2 justify-center">
-                {filteredImages[selectedIndex].tags.map((tag) => (
+                {filteredProducts[selectedIndex].tags.map((tag) => (
                   <span key={tag} className="text-sm px-3 py-1 bg-accent/20 text-accent rounded">
                     {tag}
                   </span>
@@ -262,6 +387,10 @@ const Category = () => {
           </div>
         </div>
       )}
+      */}
+      {/* ============================================================================
+          END OF OLD FULLSCREEN GALLERY MODAL
+          ============================================================================ */}
     </>
   );
 };
