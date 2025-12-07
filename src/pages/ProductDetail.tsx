@@ -45,6 +45,15 @@ function getImageUrl(category: string, slideNumber: number, imageName: string): 
   return `/images/${category}/slide_${slideNum}/${imageNameBase}.jpg`;
 }
 
+// Direct image URL from public folder for PNG files
+function getImageUrlPng(category: string, slideNumber: number, imageName: string): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
+  
+  // Return png path directly
+  return `/images/${category}/slide_${slideNum}/${imageNameBase}.png`;
+}
+
 // ============================================================================
 // OLD PRODUCT DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
 // This had more detailed fields like longDescription, features, materials, 
