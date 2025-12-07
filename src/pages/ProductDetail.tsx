@@ -45,6 +45,13 @@ function getImageUrl(category: string, slideNumber: number, imageName: string): 
   return `/images/${category}/slide_${slideNum}/${imageNameBase}.jpg`;
 }
 
+// Get PNG image URL (for lifestyle images)
+function getImageUrlPng(category: string, slideNumber: number, imageName: string): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
+  return `/images/${category}/slide_${slideNum}/${imageNameBase}.png`;
+}
+
 // ============================================================================
 // OLD PRODUCT DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
 // This had more detailed fields like longDescription, features, materials, 
@@ -334,8 +341,11 @@ const categoryData: Record<string, {
       
       return {
         id: `runner-${slideNum}`,
-        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
+        // Lifestyle image is the PRIMARY/MAIN image
+        src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
         images: [
+          // Lifestyle first, then product images (3 images total)
+          getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
           getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
           getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
         ],
