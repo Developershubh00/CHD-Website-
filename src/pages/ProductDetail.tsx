@@ -2,38 +2,15 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+// Fallback images  
 import rugImage from "@/assets/product-rug.png";
-import placematImage from "@/assets/product-placemat.png";
-import runnerImage from "@/assets/product-runner.png";
 import cushionImage from "@/assets/product-cushion.jpg";
-import throwImage from "@/assets/product-throw.jpg";
-import beddingImage from "@/assets/product-bedding.jpg";
-import bathmatImage from "@/assets/product-bathmat.jpg";
-import chairpadImage from "@/assets/product-chairpad.jpg";
-import lifestyleRug from "@/assets/lifestyle-rug.jpg";
-import lifestyleRunner from "@/assets/lifestyle-runner.jpg";
-import lifestylePlacemat from "@/assets/lifestyle-placemat.jpg";
-import lifestyleBedding from "@/assets/lifestyle-bedding.jpg";
 import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
+import bathmatImage from "@/assets/product-bathmat.jpg";
 import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
+import chairpadImage from "@/assets/product-chairpad.jpg";
 
-// Pre-load all product images using Vite's import.meta.glob
-// Using eager: true to pre-load all images synchronously
-// Match both jpg and png files
-const imageModulesJpg = import.meta.glob('/src/assets/**/image_*.jpg', { 
-  eager: true,
-  import: 'default'
-}) as Record<string, string>;
-
-const imageModulesPng = import.meta.glob('/src/assets/**/image_*.png', { 
-  eager: true,
-  import: 'default'
-}) as Record<string, string>;
-
-// Combine both modules
-const allImageModules = { ...imageModulesJpg, ...imageModulesPng };
-
-// Pre-load all data.json files (manually curated product data)
+// Load ONLY data.json files (small - OK to eager load)
 const dataModules = import.meta.glob('/src/assets/**/data.json', {
   eager: true,
   import: 'default'
@@ -49,80 +26,23 @@ const dataModules = import.meta.glob('/src/assets/**/data.json', {
 // Helper function to get data from JSON file
 function getDataFromJson(category: string, slideNumber: number) {
   const slideNum = String(slideNumber).padStart(3, '0');
+  const searchKey = `${category}/slide_${slideNum}/data.json`;
   
-  // Try different path variations
-  const pathVariations = [
-    `/src/assets/${category}/slide_${slideNum}/data.json`,
-    `./src/assets/${category}/slide_${slideNum}/data.json`,
-    `src/assets/${category}/slide_${slideNum}/data.json`,
-  ];
-  
-  // Try to find the data file
-  for (const path of pathVariations) {
-    if (dataModules[path]) {
-      return dataModules[path];
-    }
-  }
-  
-  // Also try partial match
-  const searchKey = `slide_${slideNum}/data.json`;
   for (const [key, value] of Object.entries(dataModules)) {
     if (key.includes(searchKey)) {
       return value;
     }
   }
-  
   return null;
 }
 
-// Helper function to get image URL dynamically
+// Direct image URL from public folder - NO Vite processing, instant loading!
 function getImageUrl(category: string, slideNumber: number, imageName: string): string {
   const slideNum = String(slideNumber).padStart(3, '0');
-  
-  // Try both .jpg and .png extensions
   const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
-  // Vite's glob might use different path formats, try multiple variations
-  const pathVariations = [
-    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-  ];
   
-  // Try to find the image in the pre-loaded modules
-  for (const path of pathVariations) {
-    if (allImageModules[path]) {
-      return allImageModules[path] as string;
-    }
-  }
-  
-  // Also try to find by partial match (in case path format is different)
-  const searchKey = `slide_${slideNum}/${imageNameBase}`;
-  for (const [key, value] of Object.entries(allImageModules)) {
-    if (key.includes(searchKey)) {
-      return value as string;
-    }
-  }
-  
-  // Fallback to placeholder images
-  const fallbacks: Record<string, string> = {
-    'rugs': rugImage,
-    'placemat': placematImage,
-    'placemats': placematImage,
-    'runners': runnerImage,
-    'TableRunner': runnerImage,
-    'cushion': cushionImage,
-    'cushions': cushionImage,
-    'throw': throwImage,
-    'throws': throwImage,
-    'bedding': beddingImage,
-    'bathmats': bathmatImage,
-    'chairpads': chairpadImage,
-  };
-  
-  return fallbacks[category] || rugImage;
+  // Return jpg path - img onError will fallback to png
+  return `/images/${category}/slide_${slideNum}/${imageNameBase}.jpg`;
 }
 
 // ============================================================================
@@ -576,6 +496,11 @@ export default function ProductDetail() {
     ? category.products.find(p => p.id === productId) 
     : null;
 
+  // Scroll to top when product changes
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [productId]);
+
   // Auto-rotate images every 3.5 seconds (balanced timing)
   useEffect(() => {
     if (!product || !product.images || product.images.length === 0) return;
@@ -707,8 +632,16 @@ export default function ProductDetail() {
               <img
                 src={product.images[selectedImageIndex]}
                 alt=""
+                loading="lazy"
+                decoding="async"
                 className="w-full h-full object-cover absolute inset-0"
                 aria-hidden="true"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  if (target.src.endsWith('.jpg')) {
+                    target.src = target.src.replace('.jpg', '.png');
+                  }
+                }}
               />
               
               <AnimatePresence mode="sync" initial={false}>
@@ -722,7 +655,13 @@ export default function ProductDetail() {
                   exit={{ opacity: 0 }}
                   transition={{ 
                     duration: 0.5, 
-                    ease: "easeInOut" // Smooth crossfade - no glitches
+                    ease: "easeInOut"
+                  }}
+                  onError={(e) => {
+                    const target = e.target as HTMLImageElement;
+                    if (target.src.endsWith('.jpg')) {
+                      target.src = target.src.replace('.jpg', '.png');
+                    }
                   }}
                 />
               </AnimatePresence>
@@ -752,7 +691,15 @@ export default function ProductDetail() {
                   <img
                     src={image}
                     alt={`${product.title} thumbnail ${index + 1}`}
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (target.src.endsWith('.jpg')) {
+                        target.src = target.src.replace('.jpg', '.png');
+                      }
+                    }}
                   />
                   
                   {/* Active indicator overlay */}
@@ -1025,15 +972,15 @@ export default function ProductDetail() {
         */}
       </div>
 
-      {/* Contact Form Modal - Matching "Start a Conversation" */}
+      {/* Contact Form Modal - Popup on all screen sizes */}
       {showContactForm && (
-        <div className="fixed inset-0 bg-black/50 flex items-start md:items-center justify-center z-50 p-0 md:p-4 overflow-hidden">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="bg-white dark:bg-card rounded-none md:rounded-2xl p-4 md:p-6 max-w-xl w-full h-screen md:h-auto md:max-h-[90vh] flex flex-col overflow-hidden"
+            className="bg-white dark:bg-card rounded-2xl p-5 md:p-6 max-w-md w-full max-h-[90vh] overflow-y-auto shadow-2xl"
           >
-            <div className="flex justify-between items-center mb-3 md:mb-4 flex-shrink-0">
+            <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl md:text-2xl font-light text-slate-900 dark:text-foreground">Get in Touch</h3>
               <button
                 onClick={() => {
@@ -1041,15 +988,15 @@ export default function ProductDetail() {
                   setSubmitStatus(null);
                   setFormData({ name: "", email: "", phone: "", company: "", message: "" });
                 }}
-                className="text-slate-400 hover:text-slate-900 dark:hover:text-foreground text-xl md:text-2xl transition-colors"
+                className="text-slate-400 hover:text-slate-900 dark:hover:text-foreground text-2xl transition-colors w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
               >
                 ×
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit} className="space-y-2.5 md:space-y-3 flex-1 flex flex-col min-h-0">
+            <form onSubmit={handleFormSubmit} className="space-y-3">
               <div>
-                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
                   Name *
                 </label>
                 <input
@@ -1058,12 +1005,12 @@ export default function ProductDetail() {
                   value={formData.name}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-4 py-2.5 text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
                   Email *
                 </label>
                 <input
@@ -1072,12 +1019,12 @@ export default function ProductDetail() {
                   value={formData.email}
                   onChange={handleFormChange}
                   required
-                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-4 py-2.5 text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
                   Phone
                 </label>
                 <input
@@ -1085,12 +1032,12 @@ export default function ProductDetail() {
                   name="phone"
                   value={formData.phone}
                   onChange={handleFormChange}
-                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-4 py-2.5 text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
                   Company
                 </label>
                 <input
@@ -1098,12 +1045,12 @@ export default function ProductDetail() {
                   name="company"
                   value={formData.company}
                   onChange={handleFormChange}
-                  className="w-full px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  className="w-full px-4 py-2.5 text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               <div>
-                <label className="block text-xs md:text-sm font-medium text-slate-700 dark:text-foreground mb-0.5">
+                <label className="block text-sm font-medium text-slate-700 dark:text-foreground mb-1">
                   Message *
                 </label>
                 <textarea
@@ -1111,19 +1058,19 @@ export default function ProductDetail() {
                   value={formData.message}
                   onChange={handleFormChange}
                   required
-                  rows={2}
-                  className="w-full h-20 md:h-24 px-3 py-1.5 md:px-4 md:py-2 text-sm md:text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none resize-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
+                  rows={3}
+                  className="w-full px-4 py-2.5 text-base border border-slate-300 dark:border-border rounded-lg focus:ring-2 focus:ring-slate-500 dark:focus:ring-accent focus:border-transparent outline-none resize-none bg-white dark:bg-background text-slate-900 dark:text-foreground"
                 />
               </div>
 
               {submitStatus === 'success' && (
-                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg">
+                <div className="p-3 text-sm bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg">
                   Thank you! We'll get back to you soon.
                 </div>
               )}
 
               {submitStatus === 'error' && (
-                <div className="p-2.5 md:p-3 text-xs md:text-sm bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg">
+                <div className="p-3 text-sm bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg">
                   Something went wrong. Please try again.
                 </div>
               )}
@@ -1131,7 +1078,7 @@ export default function ProductDetail() {
               <button
                 type="submit"
                 disabled={isSubmitting}
-                className="w-full bg-slate-900 dark:bg-slate-800 text-white py-2 md:py-2.5 text-sm md:text-base rounded-lg hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0"
+                className="w-full bg-slate-900 dark:bg-slate-800 text-white py-3 text-base font-medium rounded-lg hover:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
               >
                 {isSubmitting ? 'Sending...' : 'Send Message'}
               </button>

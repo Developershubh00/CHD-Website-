@@ -1,130 +1,56 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Search, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+// Fallback images
 import rugImage from "@/assets/product-rug.png";
-import placematImage from "@/assets/product-placemat.png";
-import runnerImage from "@/assets/product-runner.png";
 import cushionImage from "@/assets/product-cushion.jpg";
-import throwImage from "@/assets/product-throw.jpg";
-import beddingImage from "@/assets/product-bedding.jpg";
-import bathmatImage from "@/assets/product-bathmat.jpg";
-import chairpadImage from "@/assets/product-chairpad.jpg";
-import lifestyleRug from "@/assets/lifestyle-rug.jpg";
-import lifestyleRunner from "@/assets/lifestyle-runner.jpg";
-import lifestylePlacemat from "@/assets/lifestyle-placemat.jpg";
-import lifestyleBedding from "@/assets/lifestyle-bedding.jpg";
 import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
+import bathmatImage from "@/assets/product-bathmat.jpg";
 import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
+import chairpadImage from "@/assets/product-chairpad.jpg";
 
-// Pre-load all product images using Vite's import.meta.glob
-// Using eager: true to pre-load all images synchronously
-// Match both jpg and png files
-const imageModulesJpg = import.meta.glob('/src/assets/**/image_*.jpg', { 
-  eager: true,
-  import: 'default'
-}) as Record<string, string>;
-
-const imageModulesPng = import.meta.glob('/src/assets/**/image_*.png', { 
-  eager: true,
-  import: 'default'
-}) as Record<string, string>;
-
-// Combine both modules
-const allImageModules = { ...imageModulesJpg, ...imageModulesPng };
-
-// Pre-load all specs.json files (fast JSON loading - no OCR in production!)
-const specsModules = import.meta.glob('/src/assets/**/specs.json', {
+// Load ONLY data.json files (small - OK to eager load)
+const dataModules = import.meta.glob('/src/assets/**/data.json', {
   eager: true,
   import: 'default'
 }) as Record<string, {
   styleNumber?: string;
+  description?: string;
   technique?: string;
   content?: string;
   size?: string;
   season?: string;
-  theme?: string;
-  country?: string;
 }>;
 
-// Helper function to get specs from JSON file
-function getSpecsFromJson(category: string, slideNumber: number) {
+// Helper function to get data from JSON file
+function getDataFromJson(category: string, slideNumber: number) {
   const slideNum = String(slideNumber).padStart(3, '0');
+  const searchKey = `${category}/slide_${slideNum}/data.json`;
   
-  // Try different path variations
-  const pathVariations = [
-    `/src/assets/${category}/slide_${slideNum}/specs.json`,
-    `./src/assets/${category}/slide_${slideNum}/specs.json`,
-    `src/assets/${category}/slide_${slideNum}/specs.json`,
-  ];
-  
-  // Try to find the specs file
-  for (const path of pathVariations) {
-    if (specsModules[path]) {
-      return specsModules[path];
-    }
-  }
-  
-  // Also try partial match
-  const searchKey = `slide_${slideNum}/specs.json`;
-  for (const [key, value] of Object.entries(specsModules)) {
+  for (const [key, value] of Object.entries(dataModules)) {
     if (key.includes(searchKey)) {
       return value;
     }
   }
-  
   return null;
 }
 
-// Helper function to get image URL dynamically
+// Direct image URL from public folder - NO Vite processing, instant loading!
+// Returns both possible URLs - component will try jpg first, then png
 function getImageUrl(category: string, slideNumber: number, imageName: string): string {
   const slideNum = String(slideNumber).padStart(3, '0');
-  
-  // Try both .jpg and .png extensions
   const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
   
-  // Vite's glob might use different path formats, try multiple variations
-  const pathVariations = [
-    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `/src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `./src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.jpg`,
-    `src/assets/${category}/slide_${slideNum}/${imageNameBase}.png`,
-  ];
-  
-  // Try to find the image in the pre-loaded modules
-  for (const path of pathVariations) {
-    if (allImageModules[path]) {
-      return allImageModules[path] as string;
-    }
-  }
-  
-  // Also try to find by partial match (in case path format is different)
-  const searchKey = `slide_${slideNum}/${imageNameBase}`;
-  for (const [key, value] of Object.entries(allImageModules)) {
-    if (key.includes(searchKey)) {
-      return value as string;
-    }
-  }
-  
-  // Fallback to placeholder images
-  const fallbacks: Record<string, string> = {
-    'rugs': rugImage,
-    'placemat': placematImage,
-    'placemats': placematImage,
-    'runners': runnerImage,
-    'TableRunner': runnerImage,
-    'cushion': cushionImage,
-    'cushions': cushionImage,
-    'throw': throwImage,
-    'throws': throwImage,
-    'bedding': beddingImage,
-    'bathmats': bathmatImage,
-    'chairpads': chairpadImage,
-  };
-  
-  return fallbacks[category] || rugImage;
+  // Return jpg path - the img component will handle fallback to png
+  return `/images/${category}/slide_${slideNum}/${imageNameBase}.jpg`;
+}
+
+// Get fallback URL (png version)
+function getImageUrlPng(category: string, slideNumber: number, imageName: string): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  const imageNameBase = imageName.replace(/\.(jpg|png)$/, '');
+  return `/images/${category}/slide_${slideNum}/${imageNameBase}.png`;
 }
 
 // ============================================================================
@@ -220,7 +146,7 @@ const categoryData: Record<string, {
     name: "Rugs",
     products: Array.from({ length: 195 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('rugs', slideNum) || {};
+      const specs = getDataFromJson('rugs', slideNum) || {};
       
       return {
         id: `rug-${slideNum}`,
@@ -237,8 +163,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON + JUTE",
         size: specs.size || (i % 4 === 0 ? "24X36\"" : i % 4 === 1 ? "36X48\"" : i % 4 === 2 ? "48X72\"" : "60X84\""),
         season: specs.season || "EVERYDAY",
-        theme: specs.theme || (i % 2 === 0 ? "MODERN" : "TRADITIONAL"),
-        country: specs.country || "INDIA",
       };
     }),
   },
@@ -246,7 +170,7 @@ const categoryData: Record<string, {
     name: "Placemats",
     products: Array.from({ length: 25 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('placemat', slideNum) || {};
+      const specs = getDataFromJson('placemat', slideNum) || {};
       
       return {
         id: `placemat-${slideNum}`,
@@ -263,8 +187,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON + LINEN",
         size: specs.size || "13X18\"",
         season: specs.season || "EVERYDAY",
-        country: specs.country || "INDIA",
-        theme: specs.theme,
       };
     }),
   },
@@ -272,7 +194,7 @@ const categoryData: Record<string, {
     name: "Table Runners",
     products: Array.from({ length: 19 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('TableRunner', slideNum) || {};
+      const specs = getDataFromJson('TableRunner', slideNum) || {};
       
       return {
         id: `runner-${slideNum}`,
@@ -289,8 +211,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON + JUTE",
         size: specs.size || (i % 3 === 0 ? "72\"" : i % 3 === 1 ? "90\"" : "108\""),
         season: specs.season || "EVERYDAY",
-        country: specs.country || "INDIA",
-        theme: specs.theme,
       };
     }),
   },
@@ -298,7 +218,7 @@ const categoryData: Record<string, {
     name: "Cushions",
     products: Array.from({ length: 556 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('cushion', slideNum) || {};
+      const specs = getDataFromJson('cushion', slideNum) || {};
       
       return {
         id: `cushion-${slideNum}`,
@@ -315,8 +235,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON",
         size: specs.size || (i % 4 === 0 ? "12X12\"" : i % 4 === 1 ? "16X16\"" : i % 4 === 2 ? "18X18\"" : "20X20\""),
         season: specs.season || "EVERYDAY",
-        country: specs.country || "INDIA",
-        theme: specs.theme,
       };
     }),
   },
@@ -324,7 +242,7 @@ const categoryData: Record<string, {
     name: "Throws",
     products: Array.from({ length: 147 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('throw', slideNum) || {};
+      const specs = getDataFromJson('throw', slideNum) || {};
       
       return {
         id: `throw-${slideNum}`,
@@ -341,8 +259,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON + ACRYLIC",
         size: specs.size || (i % 2 === 0 ? "50X60\"" : "60X80\""),
         season: specs.season || "EVERYDAY",
-        country: specs.country || "INDIA",
-        theme: specs.theme,
       };
     }),
   },
@@ -350,7 +266,7 @@ const categoryData: Record<string, {
     name: "Premium Bedding",
     products: Array.from({ length: 42 }, (_, i) => {
       const slideNum = i + 1;
-      const specs = getSpecsFromJson('bedding', slideNum) || {};
+      const specs = getDataFromJson('bedding', slideNum) || {};
       
       return {
         id: `bedding-${slideNum}`,
@@ -367,8 +283,6 @@ const categoryData: Record<string, {
         content: specs.content || "COTTON",
         size: specs.size || (i % 4 === 0 ? "TWIN" : i % 4 === 1 ? "FULL" : i % 4 === 2 ? "QUEEN" : "KING"),
         season: specs.season || "EVERYDAY",
-        country: specs.country || "INDIA",
-        theme: specs.theme,
       };
     }),
   }, 
@@ -414,11 +328,16 @@ const categoryData: Record<string, {
   },
 };
 
+// Number of products to load initially and on each scroll
+const ITEMS_PER_PAGE = 9;
+
 const Category = () => {
   const { categoryId } = useParams<{ categoryId: string }>();
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  // const [selectedIndex, setSelectedIndex] = useState<number | null>(null); // For gallery modal (commented out)
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   const category = categoryId ? categoryData[categoryId] : null;
 
@@ -434,6 +353,47 @@ const Category = () => {
         product.tags.some((tag) => tag.toLowerCase().includes(query))
     );
   }, [category, searchQuery]);
+
+  // Products currently visible (paginated)
+  const visibleProducts = useMemo(() => {
+    return filteredProducts.slice(0, visibleCount);
+  }, [filteredProducts, visibleCount]);
+
+  const hasMore = visibleCount < filteredProducts.length;
+
+  // Reset visible count when search query or category changes
+  useEffect(() => {
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [searchQuery, categoryId]);
+
+  // Scroll to top when category changes
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [categoryId]);
+
+  // Infinite scroll - load more when scrolling to bottom
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const target = entries[0];
+        if (target.isIntersecting && hasMore && !isLoadingMore) {
+          setIsLoadingMore(true);
+          // Small delay for smooth UX
+          setTimeout(() => {
+            setVisibleCount((prev) => prev + ITEMS_PER_PAGE);
+            setIsLoadingMore(false);
+          }, 300);
+        }
+      },
+      { threshold: 0.1, rootMargin: "100px" }
+    );
+
+    if (loadMoreRef.current) {
+      observer.observe(loadMoreRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingMore]);
 
   const handleProductClick = (productId: string) => {
     navigate(`/category/${categoryId}/${productId}`);
@@ -527,35 +487,64 @@ const Category = () => {
             </div>
           </div>
 
+          {/* Product Count */}
+          <div className="mb-6 text-sm text-muted-foreground">
+            Showing {visibleProducts.length} of {filteredProducts.length} products
+          </div>
+
           {/* Products Grid */}
           {filteredProducts.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredProducts.map((product) => (
-                <div
-                  key={product.id}
-                  onClick={() => handleProductClick(product.id)}
-                  className="group relative aspect-square overflow-hidden bg-card border border-border cursor-pointer transition-all hover:border-accent hover:shadow-lg"
-                >
-                  <img
-                    src={product.src}
-                    alt={product.title}
-                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
-                    <div>
-                      <h3 className="text-lg font-light text-foreground mb-2">{product.title}</h3>
-                      <div className="flex flex-wrap gap-2">
-                        {product.tags.slice(0, 3).map((tag, idx) => (
-                          <span key={idx} className="text-xs px-2 py-1 bg-accent/20 text-accent rounded">
-                            {tag}
-                          </span>
-                        ))}
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {visibleProducts.map((product) => (
+                  <div
+                    key={product.id}
+                    onClick={() => handleProductClick(product.id)}
+                    className="group relative aspect-square overflow-hidden bg-card border border-border cursor-pointer transition-all hover:border-accent hover:shadow-lg"
+                  >
+                    <img
+                      src={product.src}
+                      alt={product.title}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                      onError={(e) => {
+                        // If jpg fails, try png
+                        const target = e.target as HTMLImageElement;
+                        if (target.src.endsWith('.jpg')) {
+                          target.src = target.src.replace('.jpg', '.png');
+                        }
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-6">
+                      <div>
+                        <h3 className="text-lg font-light text-foreground mb-2">{product.title}</h3>
+                        <div className="flex flex-wrap gap-2">
+                          {product.tags.slice(0, 3).map((tag, idx) => (
+                            <span key={idx} className="text-xs px-2 py-1 bg-accent/20 text-accent rounded">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+
+              {/* Load More Trigger & Indicator */}
+              <div ref={loadMoreRef} className="py-8 flex justify-center">
+                {isLoadingMore && (
+                  <div className="flex items-center gap-3 text-muted-foreground">
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    <span>Loading more products...</span>
+                  </div>
+                )}
+                {!hasMore && filteredProducts.length > ITEMS_PER_PAGE && (
+                  <p className="text-muted-foreground text-sm">You've seen all {filteredProducts.length} products</p>
+                )}
+              </div>
+            </>
           ) : (
             <div className="text-center py-20">
               <p className="text-muted-foreground text-lg">No products found matching "{searchQuery}"</p>

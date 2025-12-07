@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,13 +7,24 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { SideNav } from "@/components/SideNav";
 import Index from "./pages/Index";
 import Products from "./pages/Products";
-import Gallery from "./pages/Gallery";
 import Quality from "./pages/Quality";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
-import Category from "./pages/Category";
-import ProductDetail from "./pages/ProductDetail";
 import NotFound from "./pages/NotFound";
+
+// Lazy load heavy pages with 3000+ images - only loads when navigating to them
+const Category = lazy(() => import("./pages/Category"));
+const ProductDetail = lazy(() => import("./pages/ProductDetail"));
+
+// Loading fallback component
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <div className="flex flex-col items-center gap-4">
+      <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+      <p className="text-muted-foreground text-sm">Loading...</p>
+    </div>
+  </div>
+);
 
 const queryClient = new QueryClient();
 
@@ -25,17 +37,18 @@ const App = () => (
         <div className="flex min-h-screen w-full">
           <SideNav />
           <main className="flex-1 md:ml-20">
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/products" element={<Products />} />
-              {/* <Route path="/gallery" element={<Gallery />} /> */}
-              <Route path="/category/:categoryId" element={<Category />} />
-              <Route path="/category/:categoryId/:productId" element={<ProductDetail />} />
-              <Route path="/quality" element={<Quality />} />
-              <Route path="/about" element={<About />} />
-              <Route path="/contact" element={<Contact />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/category/:categoryId" element={<Category />} />
+                <Route path="/category/:categoryId/:productId" element={<ProductDetail />} />
+                <Route path="/quality" element={<Quality />} />
+                <Route path="/about" element={<About />} />
+                <Route path="/contact" element={<Contact />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
           </main>
         </div>
       </BrowserRouter>
