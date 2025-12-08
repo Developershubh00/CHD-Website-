@@ -203,9 +203,6 @@ const categoryData: Record<string, {
         src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
         images: [
           getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-        // Use product images only (remove baby lifestyle image)
-        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
-        images: [
           getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
           getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
         ],
@@ -512,7 +509,7 @@ const Category = () => {
         size.includes(query) ||
         season.includes(query) ||
         tags.some((tag) => (tag ?? "").toLowerCase().includes(query))
-      );
+    );
     });
   }, [category, searchQuery]);
 
