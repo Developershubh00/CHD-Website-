@@ -184,7 +184,7 @@ const categoryImagesMap: Record<string, string[]> = {
   ],
   runners: [
     baseImageMap.runners,
-    ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
   ],
   cushions: [
     baseImageMap.cushions,

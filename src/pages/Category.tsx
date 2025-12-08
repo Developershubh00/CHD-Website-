@@ -199,11 +199,9 @@ const categoryData: Record<string, {
       
       return {
         id: `runner-${slideNum}`,
-        // Lifestyle image is the PRIMARY/MAIN image (shown in category grid)
-        src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
+        // Use product images only (remove baby lifestyle image)
+        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
         images: [
-          // Lifestyle first, then product images
-          getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
           getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
           getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
         ],

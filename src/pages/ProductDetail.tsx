@@ -343,11 +343,9 @@ const categoryData: Record<string, {
       
       return {
         id: `runner-${slideNum}`,
-        // Lifestyle image is the PRIMARY/MAIN image
-        src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
+        // Use product images only (remove baby lifestyle image)
+        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
         images: [
-          // Lifestyle first, then product images (3 images total)
-          getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
           getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
           getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
         ],
@@ -622,7 +620,7 @@ export default function ProductDetail() {
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    className="w-full h-full object-cover absolute inset-0"
+                    className="w-full h-full object-contain absolute inset-0 bg-background"
                     aria-hidden="true"
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
@@ -637,7 +635,7 @@ export default function ProductDetail() {
                       key={selectedImageIndex}
                       src={product.images[selectedImageIndex]}
                       alt={`${product.title} - View ${selectedImageIndex + 1}`}
-                      className="w-full h-full object-cover absolute inset-0"
+                      className="w-full h-full object-contain absolute inset-0 bg-background"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
