@@ -65,7 +65,7 @@ const cushionsProducts = generateProducts("cushions", "Cushions", cushionImage, 
 const throwsProducts = generateProducts("throws", "Throws", throwImage, 10, "Cozy Throw");
 const beddingProducts = generateProducts("bedding", "Premium Bedding", beddingImage, 8, "Bedding Set");
 const bathmatsProducts = generateProducts("bathmats", "Bath Mats", bathmatImage, 6, "Spa Bath Mat");
-const chairpadsProducts = generateProducts("chairpads", "Chair Pads", chairpadImage, 8, "Chair Pad");
+const chairpadsProducts = generateProducts("chairpads", "Tote Bags", chairpadImage, 8, "Tote Bag");
 
 // Combine all products
 export const allProducts: Product[] = [
@@ -98,7 +98,7 @@ export const categories: Category[] = [
   { id: "throws", name: "Throws", description: "Soft throws and blankets" },
   { id: "bedding", name: "Premium Bedding", description: "Luxury bedding collections" },
   { id: "bathmats", name: "Bath Mats", description: "Spa-quality bath mats" },
-  { id: "chairpads", name: "Chair Pads", description: "Comfortable seating solutions" },
+  { id: "chairpads", name: "Tote Bags", description: "Durable reusable totes for everyday carry" },
 ];
 
 // Get category by ID

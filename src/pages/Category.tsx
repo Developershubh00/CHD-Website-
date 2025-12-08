@@ -107,10 +107,10 @@ const categoryData: Record<string, { name: string; images: Array<{ src: string; 
     ],
   },
   chairpads: {
-    name: "Chair Pads",
+    name: "Tote Bags",
     images: [
-      { src: lifestyleChairpad, title: "Dining Chair Pads in Context", tags: ["dining", "comfortable", "cushion", "chair"] },
-      { src: chairpadImage, title: "Chair Pad Collection", tags: ["chair", "pad", "comfort", "dining"] },
+      { src: lifestyleChairpad, title: "Tote Bags in Use", tags: ["tote", "bag", "carry"] },
+      { src: chairpadImage, title: "Tote Bag Collection", tags: ["tote", "bag", "everyday"] },
     ],
   },
 };
@@ -310,7 +310,7 @@ const categoryData: Record<string, {
     })),
   },
   chairpads: {
-    name: "Chair Pads",
+    name: "Tote Bags",
     products: Array.from({ length: 10 }, (_, i) => ({
       id: `chairpad-${i + 1}`,
       src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
@@ -318,10 +318,10 @@ const categoryData: Record<string, {
         i % 2 === 0 ? lifestyleChairpad : chairpadImage,
         chairpadImage, // Image 2 (replace with actual product image)
       ],
-      title: `Chair Pad Set ${i + 1}`,
-      description: `Comfortable chair pads for your dining chairs. Available in various colors and patterns.`,
-      tags: ["dining", "comfortable", "cushion"],
-      styleNumber: `CHD-CP-${String(i + 1).padStart(4, '0')}`,
+      title: `Tote Bag ${i + 1}`,
+      description: `Durable reusable tote bag for everyday carry, errands, and travel.`,
+      tags: ["tote", "bag", "carry"],
+      styleNumber: `CHD-TB-${String(i + 1).padStart(4, '0')}`,
       technique: "WOVEN",
       content: "COTTON + POLYESTER",
       size: "STANDARD",

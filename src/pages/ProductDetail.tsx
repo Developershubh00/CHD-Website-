@@ -238,21 +238,21 @@ const productData: Record<string, {
   },
   chairpads: {
     id: "chairpads",
-    name: "Chair Pads",
+    name: "Tote Bags",
     brand: "Creative Home Décor",
-    description: "Comfortable seating solutions",
-    longDescription: "Add comfort to your dining chairs with our chair pads.",
+    description: "Durable everyday tote bags",
+    longDescription: "Reusable, roomy totes designed for daily carry, errands, and travel.",
     images: [chairpadImage, chairpadImage, chairpadImage, chairpadImage],
     features: [
-      "Cushioned comfort",
-      "Tie fasteners",
-      "Reversible designs",
-      "Easy to clean"
+      "Durable handles",
+      "Roomy interior",
+      "Reusable & washable",
+      "Everyday carry"
     ],
-    materials: ["Cotton", "Polyester fill", "Memory foam options"],
+    materials: ["Cotton", "Canvas"],
     sizes: [
-      { size: "Standard chair", inStock: true, left: 12 },
-      { size: "Bar stool", inStock: true, left: 8 }
+      { size: "Medium", inStock: true, left: 12 },
+      { size: "Large", inStock: true, left: 8 }
     ],
     colors: ["Solid colors", "Patterned", "Seasonal designs"],
     rating: 4.5,
@@ -459,7 +459,7 @@ const categoryData: Record<string, {
     }),
   },
   chairpads: {
-    name: "Chair Pads",
+    name: "Tote Bags",
     products: Array.from({ length: 10 }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('chairpad', slideNum) || {};
@@ -471,8 +471,8 @@ const categoryData: Record<string, {
           i % 2 === 0 ? lifestyleChairpad : chairpadImage,
           chairpadImage,
         ],
-        title: `Chair Pad ${slideNum}`,
-        tags: ["decorative", "comfortable", "cushion"],
+        title: `Tote Bag ${slideNum}`,
+        tags: ["tote", "carry", "bag"],
         styleNumber: data.styleNumber,
         productDescription: data.description,
         technique: data.technique,

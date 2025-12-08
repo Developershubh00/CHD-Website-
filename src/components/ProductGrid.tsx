@@ -7,7 +7,7 @@ const products = [
   "Premium Bedding",
   "Throws",
   "Bed Pads",
-  "Chair Pads",
+  "Tote Bags",
 ];
 
 export const ProductGrid = () => {

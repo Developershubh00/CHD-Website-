@@ -20,7 +20,7 @@ const categories = [
   { id: "throws", name: "Throws", image: throwImage, description: "Soft throws and blankets" },
   { id: "bedding", name: "Premium Bedding", image: beddingImage, description: "Luxury bedding collections" },
   { id: "bathmats", name: "Bath Mats", image: bathmatImage, description: "Spa-quality bath mats" },
-  { id: "chairpads", name: "Chair Pads", image: chairpadImage, description: "Comfortable seating solutions" },
+  { id: "chairpads", name: "Tote Bags", image: chairpadImage, description: "Durable reusable totes" },
 ];
 
 interface ProductCard3DProps {

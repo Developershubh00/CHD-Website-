@@ -152,9 +152,9 @@ const categories = [
   },
   {
     id: "chairpads",
-    name: "Chair Pads",
+    name: "Tote Bags",
     image: chairpadImage,
-    description: "Comfortable seating solutions",
+    description: "Durable reusable totes",
   },
 ];
 

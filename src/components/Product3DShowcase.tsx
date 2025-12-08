@@ -20,7 +20,7 @@ const products = [
   { id: "throws", name: "Throws", image: throwImage, description: "Soft throws" },
   { id: "bedding", name: "Premium Bedding", image: beddingImage, description: "Luxury bedding" },
   { id: "bathmats", name: "Bath Mats", image: bathmatImage, description: "Spa-quality mats" },
-  { id: "chairpads", name: "Chair Pads", image: chairpadImage, description: "Comfortable seating" },
+  { id: "chairpads", name: "Tote Bags", image: chairpadImage, description: "Durable reusable totes" },
 ];
 
 interface ProductCardProps {
