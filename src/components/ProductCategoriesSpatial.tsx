@@ -76,15 +76,7 @@ const baseImageMap: Record<string, string> = {
 const categoryImagesMap: Record<string, string[]> = {
   rugs: [baseImageMap.rugs, ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
   placemats: [baseImageMap.placemats, ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
-  runners: [
-    baseImageMap.runners,
-    ...Array.from({ length: 6 }, (_, i) =>
-      i === 0
-        ? `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`
-        : `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`
-    ),
-  ],
-  runners: [baseImageMap.runners, ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  runners: [baseImageMap.runners, ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`)],
   cushions: [baseImageMap.cushions, ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
   throws: [baseImageMap.throws, ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
   bedding: [baseImageMap.bedding, ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
