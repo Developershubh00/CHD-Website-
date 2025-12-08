@@ -97,6 +97,8 @@
 //     </section>
 //   );
 // };
+import { useEffect, useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import rugImage from "@/assets/product-rug.png";
 import placematImage from "@/assets/product-placemat.png";
@@ -158,7 +160,99 @@ const categories = [
   },
 ];
 
+const baseImageMap: Record<string, string> = {
+  rugs: rugImage,
+  placemats: placematImage,
+  runners: runnerImage,
+  cushions: cushionImage,
+  throws: throwImage,
+  bedding: beddingImage,
+  bathmats: bathmatImage,
+  chairpads: chairpadImage,
+};
+
+// Precompute a small set of public image URLs per category (up to 6).
+// We'll always include the base image first to guarantee at least one valid source.
+const categoryImagesMap: Record<string, string[]> = {
+  rugs: [
+    baseImageMap.rugs,
+    ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+  ],
+  placemats: [
+    baseImageMap.placemats,
+    ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+  ],
+  runners: [
+    baseImageMap.runners,
+    ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`),
+  ],
+  cushions: [
+    baseImageMap.cushions,
+    ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+  ],
+  throws: [
+    baseImageMap.throws,
+    ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+  ],
+  bedding: [
+    baseImageMap.bedding,
+    ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+  ],
+  // No public images for bathmats/chairpads in /public/images; keep base only
+  bathmats: [baseImageMap.bathmats],
+  chairpads: [baseImageMap.chairpads],
+};
+
+// Column-based staggered intervals (slower/smoother): col1+5 =>5.0s, col2+6 =>6.2s, col3+7=>7.4s, col4+8=>5.6s
+const intervalPattern = [5000, 6200, 7400, 5600];
+
 export const ProductCategories = () => {
+  const [activeIndexes, setActiveIndexes] = useState<number[]>(() => categories.map(() => 0));
+
+  // Staggered intervals per column
+  useEffect(() => {
+    const timers = categories.map((cat, idx) => {
+      const interval = intervalPattern[idx % intervalPattern.length];
+      const images = categoryImagesMap[cat.id] ?? [cat.image];
+      if (images.length < 2) return null; // no need to rotate if only one image
+      const startDelay = 800 + (idx % 4) * 300;
+      const timer = setInterval(() => {
+        setActiveIndexes((prev) => {
+          const next = [...prev];
+          next[idx] = (next[idx] + 1) % images.length;
+          return next;
+        });
+      }, interval);
+      const kick = setTimeout(() => {
+        setActiveIndexes((prev) => {
+          const next = [...prev];
+          next[idx] = (next[idx] + 1) % images.length;
+          return next;
+        });
+      }, startDelay);
+      return [timer, kick];
+    });
+    return () =>
+      timers.forEach((pair) => {
+        if (!pair) return;
+        const [timer, kick] = pair as unknown as Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>;
+        if (timer) clearInterval(timer as ReturnType<typeof setInterval>);
+        if (kick) clearTimeout(kick as ReturnType<typeof setTimeout>);
+      });
+  }, []);
+
+  // Compute the image to show for each card
+  const cardImages = useMemo(
+    () =>
+      categories.map((cat, idx) => {
+        const list = categoryImagesMap[cat.id] ?? [cat.image];
+        if (!list.length) return cat.image;
+        const safeIndex = activeIndexes[idx] % list.length;
+        return list[safeIndex];
+      }),
+    [activeIndexes]
+  );
+
   return (
     <section id="products" className="py-24 md:py-32 px-6 bg-gradient-to-b from-background via-muted/20 to-background">
       <div className="max-w-7xl mx-auto">
@@ -182,13 +276,31 @@ export const ProductCategories = () => {
               }}
             >
               {/* Product Image */}
-              <div className="aspect-square overflow-hidden relative">
-                <img
-                  src={category.image}
-                  alt={category.name}
-                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                  loading="lazy"
-                />
+              <div
+                className="aspect-square overflow-hidden relative"
+                style={{ backgroundImage: `url(${cardImages[index] ?? category.image})`, backgroundSize: "cover", backgroundPosition: "center" }}
+              >
+                <AnimatePresence mode="sync" initial={false}>
+                  <motion.img
+                    key={cardImages[index] ?? category.image}
+                    src={cardImages[index] ?? category.image}
+                    alt={category.name}
+                    className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 absolute inset-0"
+                    loading="lazy"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1.2, ease: "easeInOut" }}
+                    onError={(e) => {
+                      const target = e.currentTarget as HTMLImageElement;
+                      if (target.src.endsWith(".jpg")) {
+                        target.src = target.src.replace(".jpg", ".png");
+                      } else {
+                        target.src = baseImageMap[category.id] ?? category.image;
+                      }
+                    }}
+                  />
+                </AnimatePresence>
                 
                 {/* Gradient Overlay on Hover */}
                 <div className="absolute inset-0 bg-gradient-to-t from-background/90 via-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />

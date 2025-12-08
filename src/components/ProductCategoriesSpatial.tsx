@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import rugImage from "@/assets/product-rug.png";
 import placematImage from "@/assets/product-placemat.png";
@@ -60,8 +61,35 @@ const categories = [
   },
 ];
 
+const baseImageMap: Record<string, string> = {
+  rugs: rugImage,
+  placemats: placematImage,
+  runners: runnerImage,
+  cushions: cushionImage,
+  throws: throwImage,
+  bedding: beddingImage,
+  bathmats: bathmatImage,
+  chairpads: chairpadImage,
+};
+
+// Only include public folders that exist; for bathmats/chairpads keep base only
+const categoryImagesMap: Record<string, string[]> = {
+  rugs: [baseImageMap.rugs, ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  placemats: [baseImageMap.placemats, ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  runners: [baseImageMap.runners, ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`)],
+  cushions: [baseImageMap.cushions, ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  throws: [baseImageMap.throws, ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  bedding: [baseImageMap.bedding, ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`)],
+  bathmats: [baseImageMap.bathmats],
+  chairpads: [baseImageMap.chairpads],
+};
+
+// Column-based staggered intervals (slower, smoother): col1+5 =>5.0s, col2+6 =>6.2s, col3+7=>7.4s, col4+8=>5.6s
+const intervalPattern = [5000, 6200, 7400, 8600];
+
 export const ProductCategoriesSpatial = () => {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [activeIndexes, setActiveIndexes] = useState<number[]>(() => categories.map(() => 0));
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +105,51 @@ export const ProductCategoriesSpatial = () => {
     window.addEventListener("mousemove", handleMouseMove);
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
+
+  // rotate card images with staggered intervals per column
+  useEffect(() => {
+    const timers = categories.map((cat, idx) => {
+      const interval = intervalPattern[idx % intervalPattern.length];
+      const images = categoryImagesMap[cat.id] ?? [cat.image];
+      if (images.length < 2) return null;
+      // small staggered start so they don't all swap immediately
+      const startDelay = 800 + (idx % 4) * 300;
+      const timer = setInterval(() => {
+        setActiveIndexes((prev) => {
+          const next = [...prev];
+          next[idx] = (next[idx] + 1) % images.length;
+          return next;
+        });
+      }, interval);
+      // kick the first change after the delay
+      const kick = setTimeout(() => {
+        setActiveIndexes((prev) => {
+          const next = [...prev];
+          next[idx] = (next[idx] + 1) % images.length;
+          return next;
+        });
+      }, startDelay); // delayed first change for staggering
+      return [timer, kick];
+    });
+    return () =>
+      timers.forEach((pair) => {
+        if (!pair) return;
+        const [timer, kick] = pair as unknown as Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>;
+        if (timer) clearInterval(timer as ReturnType<typeof setInterval>);
+        if (kick) clearTimeout(kick as ReturnType<typeof setTimeout>);
+      });
+  }, []);
+
+  const cardImages = useMemo(
+    () =>
+      categories.map((cat, idx) => {
+        const list = categoryImagesMap[cat.id] ?? [cat.image];
+        if (!list.length) return cat.image;
+        const safeIndex = activeIndexes[idx] % list.length;
+        return list[safeIndex];
+      }),
+    [activeIndexes]
+  );
 
   return (
     <section id="products" className="py-24 md:py-32 px-6 bg-gradient-to-b from-background via-muted/20 to-background overflow-hidden relative">
@@ -114,13 +187,31 @@ export const ProductCategoriesSpatial = () => {
               >
                 <div className="relative overflow-hidden rounded-2xl bg-card border-2 border-border/50 shadow-2xl transition-all duration-500 hover:border-accent hover:shadow-accent/20 hover:scale-105 hover:-translate-y-2">
                   {/* Product Image */}
-                  <div className="aspect-square overflow-hidden">
-                    <img
-                      src={category.image}
-                      alt={category.name}
-                      className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                      loading="lazy"
-                    />
+                  <div
+                    className="aspect-square overflow-hidden relative bg-card"
+                    style={{ backgroundImage: `url(${cardImages[index] ?? category.image})`, backgroundSize: "cover", backgroundPosition: "center" }}
+                  >
+                    <AnimatePresence mode="sync" initial={false}>
+                      <motion.img
+                        key={cardImages[index] ?? category.image}
+                        src={cardImages[index] ?? category.image}
+                        alt={category.name}
+                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 absolute inset-0"
+                        loading="lazy"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 1.2, ease: "easeInOut" }}
+                        onError={(e) => {
+                          const target = e.currentTarget as HTMLImageElement;
+                          if (target.src.endsWith(".jpg")) {
+                            target.src = target.src.replace(".jpg", ".png");
+                          } else {
+                            target.src = baseImageMap[category.id] ?? category.image;
+                          }
+                        }}
+                      />
+                    </AnimatePresence>
                   </div>
 
                   {/* Gradient Overlay */}

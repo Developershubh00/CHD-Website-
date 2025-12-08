@@ -346,15 +346,32 @@ const Category = () => {
 
   const filteredProducts = useMemo(() => {
     if (!category) return [];
-    if (!searchQuery.trim()) return category.products;
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return category.products;
 
-    const query = searchQuery.toLowerCase();
-    return category.products.filter(
-      (product) =>
-        product.title.toLowerCase().includes(query) ||
-        product.description.toLowerCase().includes(query) ||
-        product.tags.some((tag) => tag.toLowerCase().includes(query))
-    );
+    return category.products.filter((product) => {
+      const title = product.title?.toLowerCase() ?? "";
+      const desc = product.description?.toLowerCase() ?? "";
+      const tags = product.tags ?? [];
+      const style = product.styleNumber?.toLowerCase() ?? "";
+      const prodDesc = product.productDescription?.toLowerCase() ?? "";
+      const technique = product.technique?.toLowerCase() ?? "";
+      const content = product.content?.toLowerCase() ?? "";
+      const size = product.size?.toLowerCase() ?? "";
+      const season = product.season?.toLowerCase() ?? "";
+
+      return (
+        title.includes(query) ||
+        desc.includes(query) ||
+        style.includes(query) ||
+        prodDesc.includes(query) ||
+        technique.includes(query) ||
+        content.includes(query) ||
+        size.includes(query) ||
+        season.includes(query) ||
+        tags.some((tag) => (tag ?? "").toLowerCase().includes(query))
+      );
+    });
   }, [category, searchQuery]);
 
   // Products currently visible (paginated)
