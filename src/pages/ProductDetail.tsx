@@ -615,48 +615,48 @@ export default function ProductDetail() {
               {/* Main Image - with visible overflow for arrows */}
               <div className="relative w-full aspect-square md:aspect-square lg:aspect-[4/5] lg:max-h-[70vh]">
                 <div className="relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden border-2 border-border bg-card shadow-lg group">
-              {/* Static background image to prevent white space */}
-              <img
-                src={product.images[selectedImageIndex]}
-                alt=""
-                loading="lazy"
-                decoding="async"
+                  {/* Static background image to prevent white space */}
+                  <img
+                    src={product.images[selectedImageIndex]}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
                     className="w-full h-full object-contain absolute inset-0 bg-background"
-                aria-hidden="true"
-                onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  if (target.src.endsWith('.jpg')) {
-                    target.src = target.src.replace('.jpg', '.png');
-                  }
-                }}
-              />
-              
-              <AnimatePresence mode="sync" initial={false}>
-                <motion.img
-                  key={selectedImageIndex}
-                  src={product.images[selectedImageIndex]}
-                  alt={`${product.title} - View ${selectedImageIndex + 1}`}
+                    aria-hidden="true"
+                    onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      if (target.src.endsWith('.jpg')) {
+                        target.src = target.src.replace('.jpg', '.png');
+                      }
+                    }}
+                  />
+                  
+                  <AnimatePresence mode="sync" initial={false}>
+                    <motion.img
+                      key={selectedImageIndex}
+                      src={product.images[selectedImageIndex]}
+                      alt={`${product.title} - View ${selectedImageIndex + 1}`}
                       className="w-full h-full object-contain absolute inset-0 bg-background"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ 
-                    duration: 0.5, 
-                    ease: "easeInOut"
-                  }}
-                  onError={(e) => {
-                    const target = e.target as HTMLImageElement;
-                    if (target.src.endsWith('.jpg')) {
-                      target.src = target.src.replace('.jpg', '.png');
-                    }
-                  }}
-                />
-              </AnimatePresence>
-              
-              {/* Image Counter Indicator */}
-              <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-background/80 backdrop-blur-sm px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-medium border border-border">
-                {selectedImageIndex + 1} / {product.images.length}
-              </div>
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ 
+                        duration: 0.5, 
+                        ease: "easeInOut"
+                      }}
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (target.src.endsWith('.jpg')) {
+                          target.src = target.src.replace('.jpg', '.png');
+                        }
+                      }}
+                    />
+                  </AnimatePresence>
+
+                  {/* Image Counter Indicator */}
+                  <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-background/80 backdrop-blur-sm px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-medium border border-border">
+                    {selectedImageIndex + 1} / {product.images.length}
+                  </div>
 
               {/* Gradient overlay on hover */}
               <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
