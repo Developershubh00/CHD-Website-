@@ -172,36 +172,31 @@ const baseImageMap: Record<string, string> = {
 };
 
 // Precompute a small set of public image URLs per category (up to 6).
-// We'll always include the base image first to guarantee at least one valid source.
+// Use lifestyle images from slides 1-6 for rotation
 const categoryImagesMap: Record<string, string[]> = {
   rugs: [
     baseImageMap.rugs,
-    ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
   placemats: [
     baseImageMap.placemats,
-    ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
   runners: [
     baseImageMap.runners,
-    ...Array.from({ length: 6 }, (_, i) =>
-      i === 0
-        ? `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`
-        : `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`
-    ),
-    ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`),
   ],
   cushions: [
     baseImageMap.cushions,
-    ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
   throws: [
     baseImageMap.throws,
-    ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
   bedding: [
     baseImageMap.bedding,
-    ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/image_01.jpg`),
+    ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
   // No public images for bathmats/chairpads in /public/images; keep base only
   bathmats: [baseImageMap.bathmats],
@@ -289,9 +284,9 @@ export const ProductCategories = () => {
                   <motion.img
                     key={cardImages[index] ?? category.image}
                     src={cardImages[index] ?? category.image}
-                    alt={category.name}
+                  alt={category.name}
                     className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 absolute inset-0"
-                    loading="lazy"
+                  loading="lazy"
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -304,7 +299,7 @@ export const ProductCategories = () => {
                         target.src = baseImageMap[category.id] ?? category.image;
                       }
                     }}
-                  />
+                />
                 </AnimatePresence>
                 
                 {/* Gradient Overlay on Hover */}

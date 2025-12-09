@@ -54,6 +54,19 @@ function getImageUrlPng(category: string, slideNumber: number, imageName: string
   return `/images/${category}/slide_${slideNum}/${imageNameBase}.png`;
 }
 
+// Get lifestyle image URL (tries jpg first, then png)
+function getLifestyleImageUrl(category: string, slideNumber: number): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  // Try jpg first, component will fallback to png if needed
+  return `/images/${category}/slide_${slideNum}/lifestyle.jpg`;
+}
+
+// Get table image URL
+function getTableImageUrl(category: string, slideNumber: number): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  return `/images/${category}/slide_${slideNum}/table_01.png`;
+}
+
 // ============================================================================
 // OLD PRODUCT DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
 // This had more detailed fields like longDescription, features, materials, 
@@ -294,15 +307,17 @@ const categoryData: Record<string, {
       
       return {
         id: `rug-${slideNum}`,
-        src: getImageUrl('rugs', slideNum, 'image_01.jpg'),
+        src: getLifestyleImageUrl('rugs', slideNum),
         images: [
+          getLifestyleImageUrl('rugs', slideNum),
           getImageUrl('rugs', slideNum, 'image_01.jpg'),
           getImageUrl('rugs', slideNum, 'image_02.jpg'),
+          getTableImageUrl('rugs', slideNum),
         ],
-        title: `Handwoven Rug ${slideNum}`,
+        title: data.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
         tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
         // Product specifications from data.json
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -319,14 +334,16 @@ const categoryData: Record<string, {
       
       return {
         id: `placemat-${slideNum}`,
-        src: getImageUrl('placemat', slideNum, 'image_01.jpg'),
+        src: getLifestyleImageUrl('placemat', slideNum),
         images: [
+          getLifestyleImageUrl('placemat', slideNum),
           getImageUrl('placemat', slideNum, 'image_01.jpg'),
           getImageUrl('placemat', slideNum, 'image_02.jpg'),
+          getTableImageUrl('placemat', slideNum),
         ],
-        title: `Elegant Placemat ${slideNum}`,
+        title: data.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
         tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -343,19 +360,17 @@ const categoryData: Record<string, {
       
       return {
         id: `runner-${slideNum}`,
-        // Lifestyle first, then product images
+        // Lifestyle first, then product images, then table
         src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
         images: [
           getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-        // Use product images only (remove baby lifestyle image)
-        src: getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
-        images: [
           getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
           getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
+          getTableImageUrl('TableRunner', slideNum),
         ],
-        title: `Table Runner ${slideNum}`,
+        title: data.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
         tags: ["dining", "elegant", "table decor"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -372,14 +387,16 @@ const categoryData: Record<string, {
       
       return {
         id: `cushion-${slideNum}`,
-        src: getImageUrl('cushion', slideNum, 'image_01.jpg'),
+        src: getLifestyleImageUrl('cushion', slideNum),
         images: [
+          getLifestyleImageUrl('cushion', slideNum),
           getImageUrl('cushion', slideNum, 'image_01.jpg'),
           getImageUrl('cushion', slideNum, 'image_02.jpg'),
+          getTableImageUrl('cushion', slideNum),
         ],
-        title: `Decorative Cushion ${slideNum}`,
+        title: data.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
         tags: ["decorative", "comfort", "living room"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -396,14 +413,16 @@ const categoryData: Record<string, {
       
       return {
         id: `throw-${slideNum}`,
-        src: getImageUrl('throw', slideNum, 'image_01.jpg'),
+        src: getLifestyleImageUrl('throw', slideNum),
         images: [
+          getLifestyleImageUrl('throw', slideNum),
           getImageUrl('throw', slideNum, 'image_01.jpg'),
           getImageUrl('throw', slideNum, 'image_02.jpg'),
+          getTableImageUrl('throw', slideNum),
         ],
-        title: `Cozy Throw ${slideNum}`,
+        title: data.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
         tags: ["soft", "cozy", "blanket"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -420,14 +439,16 @@ const categoryData: Record<string, {
       
       return {
         id: `bedding-${slideNum}`,
-        src: getImageUrl('bedding', slideNum, 'image_01.jpg'),
+        src: getLifestyleImageUrl('bedding', slideNum),
         images: [
+          getLifestyleImageUrl('bedding', slideNum),
           getImageUrl('bedding', slideNum, 'image_01.jpg'),
           getImageUrl('bedding', slideNum, 'image_02.jpg'),
+          getTableImageUrl('bedding', slideNum),
         ],
-        title: `Premium Bedding ${slideNum}`,
+        title: data.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
         tags: ["luxury", "bedroom", "comfortable"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -449,9 +470,9 @@ const categoryData: Record<string, {
           i % 2 === 0 ? lifestyleBathmat : bathmatImage,
           bathmatImage,
         ],
-        title: `Spa Bath Mat ${slideNum}`,
+        title: data.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
         tags: ["spa", "bathroom", "absorbent"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -473,9 +494,9 @@ const categoryData: Record<string, {
           i % 2 === 0 ? lifestyleChairpad : chairpadImage,
           chairpadImage,
         ],
-        title: `Tote Bag ${slideNum}`,
+        title: data.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
         tags: ["tote", "carry", "bag"],
-        styleNumber: data.styleNumber,
+        styleNumber: data.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
         productDescription: data.description,
         technique: data.technique,
         content: data.content,
@@ -526,7 +547,7 @@ export default function ProductDetail() {
 
   const handleNextImage = () => {
     if (!product?.images?.length) return;
-    setSelectedImageIndex((prev) => (prev + 1) % product.images.length);
+          setSelectedImageIndex((prev) => (prev + 1) % product.images.length);
   };
 
   if (!category || !product) {
@@ -661,8 +682,8 @@ export default function ProductDetail() {
                     {selectedImageIndex + 1} / {product.images.length}
                   </div>
 
-                  {/* Gradient overlay on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              {/* Gradient overlay on hover */}
+              <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
                 </div>
 
                 {/* Manual navigation arrows (outside the clipped area) */}
@@ -686,7 +707,7 @@ export default function ProductDetail() {
                     </button>
                   </>
                 )}
-              </div>
+            </div>
 
             {/* Thumbnail Navigation - Modern Premium Design */}
             <div className="flex gap-2 md:gap-3 justify-center flex-shrink-0">
