@@ -9,7 +9,7 @@ const navItems = [
   { to: "/products", label: "Products", icon: Package },
   // { to: "/gallery", label: "Our Factory", icon: Image },
   { to: "/quality", label: "Quality", icon: Award },
-  { to: "/about", label: "About", icon: Info },
+  { to: "/about", label: "About Us", icon: Info },
   { to: "/contact", label: "Contact", icon: Mail },
 ];
 

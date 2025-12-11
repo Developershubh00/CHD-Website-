@@ -35,7 +35,7 @@ const AboutSection = () => {
               : 'opacity-0 translate-y-8'
           }`}
         >
-          About
+          About Us
         </h2>
         
         <div className="space-y-6 text-lg text-foreground/90 leading-relaxed font-light">
@@ -46,7 +46,7 @@ const AboutSection = () => {
                 : 'opacity-0 translate-y-8'
             }`}
           >
-            Creative Home Décor is built on a simple approach: do our work with care and deliver what we promise. We design and produce everyday home textiles—placemats, table runners, rugs, bathmats, bedding, and cushions—with attention to detail and a steady commitment to consistency.
+            Creative Home Décor is a B2B, export-focused home-textile manufacturer serving global retailers and sourcing teams and leading buyers. It's built on a simple approach: do our work with care and deliver what we promise. We design and produce everyday home textiles—placemats, table runners, rugs, bathmats, bedding, and cushions—with attention to detail and a steady commitment to consistency.
           </p>
           
           <p
