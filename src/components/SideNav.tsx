@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { NavLink } from "@/components/NavLink";
-import { Package, Image, Award, Info, Mail, Menu, X } from "lucide-react";
+import { Package, Image, Award, Info, Mail, Menu, X, FileText, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import logoGD from "@/assets/logo-gd-no-bg.png";
 import { Link } from "react-router-dom";
@@ -9,6 +9,8 @@ const navItems = [
   { to: "/products", label: "Products", icon: Package },
   // { to: "/gallery", label: "Our Factory", icon: Image },
   { to: "/quality", label: "Quality", icon: Award },
+  { to: "/certificate", label: "Certificate", icon: FileText },
+  { to: "/compliance", label: "Compliance", icon: ShieldCheck },
   { to: "/about", label: "About Us", icon: Info },
   { to: "/contact", label: "Contact", icon: Mail },
 ];

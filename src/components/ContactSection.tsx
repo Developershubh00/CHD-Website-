@@ -451,11 +451,14 @@ const ContactSection = () => {
 
   const linkedinLink = { name: "LinkedIn", href: "#" };
 
-  const quickLinks = [
-    { name: "About", href: "#about" },
-    { name: "Products", href: "#products" },
-    { name: "Gallery", href: "#gallery" },
-    { name: "Certifications", href: "#certifications" },
+  const quickLinksLeft = [
+    { name: "About", href: "/about" },
+    { name: "Products", href: "/products" },
+  ];
+
+  const quickLinksRight = [
+    { name: "Certificate", href: "/certificate" },
+    { name: "Compliance", href: "/compliance" },
   ];
 
   return (
@@ -580,22 +583,43 @@ const ContactSection = () => {
               <h3 className="text-2xl font-light mb-6 text-slate-800">
                 Quick Links
               </h3>
-              <div className="grid grid-cols-2 gap-4">
-                {quickLinks.map((link, index) => (
-                  <motion.a
-                    key={link.name}
-                    href={link.href}
-                    className="group flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
-                    initial={{ opacity: 0, y: 10 }}
-                    whileInView={{ opacity: 1, y: 0 }}
-                    viewport={{ once: true }}
-                    transition={{ duration: 0.3, delay: index * 0.1 }}
-                    whileHover={{ x: 5 }}
-                  >
-                    <ArrowUpRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {link.name}
-                  </motion.a>
-                ))}
+              <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                {/* Left column */}
+                <div className="flex flex-col gap-4">
+                  {quickLinksLeft.map((link, index) => (
+                    <motion.a
+                      key={link.name}
+                      href={link.href}
+                      className="group flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+                      initial={{ opacity: 0, y: 10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                      whileHover={{ x: 5 }}
+                    >
+                      <ArrowUpRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {link.name}
+                    </motion.a>
+                  ))}
+                </div>
+                {/* Right column */}
+                <div className="flex flex-col gap-4">
+                  {quickLinksRight.map((link, index) => (
+                    <motion.a
+                      key={link.name}
+                      href={link.href}
+                      className="group flex items-center gap-2 text-slate-600 hover:text-slate-900 transition-colors"
+                      initial={{ opacity: 0, y: 10 }}
+                      whileInView={{ opacity: 1, y: 0 }}
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.3, delay: (index + 2) * 0.1 }}
+                      whileHover={{ x: 5 }}
+                    >
+                      <ArrowUpRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {link.name}
+                    </motion.a>
+                  ))}
+                </div>
               </div>
             </div>
 

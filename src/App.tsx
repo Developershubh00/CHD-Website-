@@ -8,6 +8,8 @@ import { SideNav } from "@/components/SideNav";
 import Index from "./pages/Index";
 import Products from "./pages/Products";
 import Quality from "./pages/Quality";
+import Certificate from "./pages/Certificate";
+import Compliance from "./pages/Compliance";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import NotFound from "./pages/NotFound";
@@ -44,6 +46,8 @@ const App = () => (
                 <Route path="/category/:categoryId" element={<Category />} />
                 <Route path="/category/:categoryId/:productId" element={<ProductDetail />} />
                 <Route path="/quality" element={<Quality />} />
+                <Route path="/certificate" element={<Certificate />} />
+                <Route path="/compliance" element={<Compliance />} />
                 <Route path="/about" element={<About />} />
                 <Route path="/contact" element={<Contact />} />
                 <Route path="*" element={<NotFound />} />
