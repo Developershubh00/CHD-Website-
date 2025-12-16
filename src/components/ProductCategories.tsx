@@ -198,47 +198,74 @@ const categoryImagesMap: Record<string, string[]> = {
     baseImageMap.bedding,
     ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`),
   ],
-  // No public images for bathmats/chairpads in /public/images; keep base only
-  bathmats: [baseImageMap.bathmats],
-  chairpads: [baseImageMap.chairpads],
+  bathmats: [
+    baseImageMap.bathmats,
+    ...Array.from({ length: 6 }, (_, i) => `/images/bathmat/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`),
+  ],
+  chairpads: [
+    baseImageMap.chairpads,
+    ...Array.from({ length: 6 }, (_, i) => `/images/totebag/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`),
+  ],
 };
 
 // Column-based staggered intervals (slower/smoother): col1+5 =>5.0s, col2+6 =>6.2s, col3+7=>7.4s, col4+8=>5.6s
 const intervalPattern = [5000, 6200, 7400, 5600];
 
+// Snake pattern mapping for 4-column grid: top-left→right→bottom-right→left
+// Visual order: [0][1][2][3] then [7][6][5][4]
+//                [4][5][6][7]
+const snakePattern = [0, 1, 2, 3, 7, 6, 5, 4];
+
 export const ProductCategories = () => {
   const [activeIndexes, setActiveIndexes] = useState<number[]>(() => categories.map(() => 0));
 
-  // Staggered intervals per column
+  // Snake pattern rotation - each card rotates every 5000ms but offset by its position
   useEffect(() => {
-    const timers = categories.map((cat, idx) => {
-      const interval = intervalPattern[idx % intervalPattern.length];
+    const intervals: Array<ReturnType<typeof setInterval> | null> = [];
+    const timeouts: Array<ReturnType<typeof setTimeout> | null> = [];
+    
+    categories.forEach((cat, idx) => {
       const images = categoryImagesMap[cat.id] ?? [cat.image];
-      if (images.length < 2) return null; // no need to rotate if only one image
-      const startDelay = 800 + (idx % 4) * 300;
-      const timer = setInterval(() => {
+      if (images.length < 2) {
+        intervals.push(null);
+        timeouts.push(null);
+        return;
+      }
+      // Map visual position (snake order) to delay: 100, 200, 300, 400, 500, 600, 700, 800
+      const visualPosition = snakePattern.indexOf(idx);
+      const offset = 100 + visualPosition * 100; // Offset in snake sequence
+      const interval = 5000; // Base rotation interval
+      
+      // First rotation at offset time, then start interval
+      const firstTimeout = setTimeout(() => {
         setActiveIndexes((prev) => {
           const next = [...prev];
           next[idx] = (next[idx] + 1) % images.length;
           return next;
         });
-      }, interval);
-      const kick = setTimeout(() => {
-        setActiveIndexes((prev) => {
-          const next = [...prev];
-          next[idx] = (next[idx] + 1) % images.length;
-          return next;
-        });
-      }, startDelay);
-      return [timer, kick];
+        
+        // Then start interval from that point
+        intervals[idx] = setInterval(() => {
+          setActiveIndexes((prev) => {
+            const next = [...prev];
+            next[idx] = (next[idx] + 1) % images.length;
+            return next;
+          });
+        }, interval);
+      }, offset);
+      
+      timeouts.push(firstTimeout);
+      intervals.push(null); // Will be set by setTimeout
     });
-    return () =>
-      timers.forEach((pair) => {
-        if (!pair) return;
-        const [timer, kick] = pair as unknown as Array<ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>>;
-        if (timer) clearInterval(timer as ReturnType<typeof setInterval>);
-        if (kick) clearTimeout(kick as ReturnType<typeof setTimeout>);
+    
+    return () => {
+      intervals.forEach((timer) => {
+        if (timer) clearInterval(timer);
       });
+      timeouts.forEach((timer) => {
+        if (timer) clearTimeout(timer);
+      });
+    };
   }, []);
 
   // Compute the image to show for each card

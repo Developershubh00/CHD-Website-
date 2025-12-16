@@ -21,6 +21,7 @@ const dataModules = import.meta.glob('/src/assets/**/data.json', {
   content?: string;
   size?: string;
   season?: string;
+  country?: string;
 }>;
 
 // Helper function to get data from JSON file
@@ -60,10 +61,86 @@ function getLifestyleImageUrl(category: string, slideNumber: number): string {
   return `/images/${category}/slide_${slideNum}/lifestyle.jpg`;
 }
 
-// Get table image URL
+// Get lifestyle image URL as PNG (for categories that use PNG)
+function getLifestyleImageUrlPng(category: string, slideNumber: number): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  return `/images/${category}/slide_${slideNum}/lifestyle.png`;
+}
+
+// Get table image URL (not used anymore, kept for reference)
 function getTableImageUrl(category: string, slideNumber: number): string {
   const slideNum = String(slideNumber).padStart(3, '0');
   return `/images/${category}/slide_${slideNum}/table_01.png`;
+}
+
+// Build dynamic image array (excluding table images)
+// Returns: [lifestyle, image_01, image_02] - missing images will be handled by onError handlers
+function getProductImages(category: string, slideNumber: number, lifestylePng: boolean = false): string[] {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  const images: string[] = [];
+  
+  // Add lifestyle image (some categories like TableRunner use PNG for lifestyle)
+  if (lifestylePng) {
+    images.push(`/images/${category}/slide_${slideNum}/lifestyle.png`);
+  } else {
+    images.push(`/images/${category}/slide_${slideNum}/lifestyle.jpg`); // Will fallback to png via onError
+  }
+  
+  // Add image_01 and image_02 - always try jpg first (onError will fallback to png)
+  images.push(`/images/${category}/slide_${slideNum}/image_01.jpg`);
+  images.push(`/images/${category}/slide_${slideNum}/image_02.jpg`);
+  
+  // Note: table_01.png is excluded - not shown in thumbnails or detail page
+  return images;
+}
+
+// Get 10 lifestyle images from different categories for rotation
+function getRotatingLifestyleImages(baseSlideNum: number): string[] {
+  // Mix lifestyle images from different categories to create variety
+  // Using different slide numbers from various categories
+  return [
+    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 1) % 195) + 1),
+    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 5) % 25) + 1),
+    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 10) % 556) + 1),
+    getLifestyleImageUrlPng('throw', ((baseSlideNum + 15) % 147) + 1),
+    getLifestyleImageUrlPng('bedding', ((baseSlideNum + 20) % 42) + 1),
+    getLifestyleImageUrlPng('TableRunner', ((baseSlideNum + 25) % 19) + 1),
+    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 30) % 195) + 1),
+    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 35) % 556) + 1),
+    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 40) % 25) + 1),
+    getLifestyleImageUrlPng('throw', ((baseSlideNum + 45) % 147) + 1),
+  ];
+}
+
+// Generate searchable tags from product fields (description, technique, content)
+function generateProductTags(specs: { description?: string; technique?: string; content?: string }): string[] {
+  const tags: string[] = [];
+  
+  // Add description as tag (cleaned up)
+  if (specs.description) {
+    const desc = specs.description.trim().toUpperCase();
+    if (desc && desc.length <= 20) {
+      tags.push(desc);
+    }
+  }
+  
+  // Add technique as tag
+  if (specs.technique) {
+    tags.push(specs.technique.trim().toUpperCase());
+  }
+  
+  // Split content by common separators and add each material as tag
+  if (specs.content) {
+    const materials = specs.content
+      .split(/[+,\/&]/)
+      .map(m => m.trim().toUpperCase())
+      .filter(m => m.length > 0);
+    tags.push(...materials);
+  }
+  
+  // Remove duplicates and return max 3 tags
+  const uniqueTags = [...new Set(tags)].slice(0, 3);
+  return uniqueTags;
 }
 
 // ============================================================================
@@ -161,22 +238,20 @@ const categoryData: Record<string, {
     products: Array.from({ length: 195 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('rugs', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON + JUTE";
+      const description = specs.description || "RUG";
       
       return {
         id: `rug-${slideNum}`,
         src: getLifestyleImageUrl('rugs', slideNum),
-        images: [
-          getLifestyleImageUrl('rugs', slideNum),
-          getImageUrl('rugs', slideNum, 'image_01.jpg'),
-          getImageUrl('rugs', slideNum, 'image_02.jpg'),
-          getTableImageUrl('rugs', slideNum),
-        ],
+        images: getProductImages('rugs', slideNum),
         title: specs.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
         description: `Premium quality handwoven rug with unique design pattern ${slideNum}. Crafted with precision and care using traditional weaving techniques.`,
-        tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON + JUTE",
+        technique,
+        content,
         size: specs.size || (i % 4 === 0 ? "24X36\"" : i % 4 === 1 ? "36X48\"" : i % 4 === 2 ? "48X72\"" : "60X84\""),
         season: specs.season || "EVERYDAY",
       };
@@ -187,22 +262,20 @@ const categoryData: Record<string, {
     products: Array.from({ length: 25 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('placemat', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON + LINEN";
+      const description = specs.description || "PLACEMAT";
       
       return {
         id: `placemat-${slideNum}`,
         src: getLifestyleImageUrl('placemat', slideNum),
-        images: [
-          getLifestyleImageUrl('placemat', slideNum),
-          getImageUrl('placemat', slideNum, 'image_01.jpg'),
-          getImageUrl('placemat', slideNum, 'image_02.jpg'),
-          getTableImageUrl('placemat', slideNum),
-        ],
+        images: getProductImages('placemat', slideNum),
         title: specs.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
         description: `Beautiful placemat set perfect for dining occasions. Set of ${4 + (i % 3)} pieces with elegant design.`,
-        tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON + LINEN",
+        technique,
+        content,
         size: specs.size || "13X18\"",
         season: specs.season || "EVERYDAY",
       };
@@ -213,23 +286,21 @@ const categoryData: Record<string, {
     products: Array.from({ length: 19 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('TableRunner', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON + JUTE";
+      const description = specs.description || "TABLE RUNNER";
       
       return {
         id: `runner-${slideNum}`,
         // Use lifestyle as main, plus product shots and table
         src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-        images: [
-          getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-          getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
-          getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
-          getTableImageUrl('TableRunner', slideNum),
-        ],
+        images: getProductImages('TableRunner', slideNum, true), // Use PNG for TableRunner
         title: specs.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
         description: `Elegant table runner to enhance your dining table. Available in various lengths and patterns.`,
-        tags: ["dining", "elegant", "table decor"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON + JUTE",
+        technique,
+        content,
         size: specs.size || (i % 3 === 0 ? "72\"" : i % 3 === 1 ? "90\"" : "108\""),
         season: specs.season || "EVERYDAY",
       };
@@ -240,22 +311,20 @@ const categoryData: Record<string, {
     products: Array.from({ length: 556 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('cushion', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON";
+      const description = specs.description || "CUSHION";
       
       return {
         id: `cushion-${slideNum}`,
         src: getLifestyleImageUrl('cushion', slideNum),
-        images: [
-          getLifestyleImageUrl('cushion', slideNum),
-          getImageUrl('cushion', slideNum, 'image_01.jpg'),
-          getImageUrl('cushion', slideNum, 'image_02.jpg'),
-          getTableImageUrl('cushion', slideNum),
-        ],
+        images: getProductImages('cushion', slideNum),
         title: specs.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
         description: `Comfortable and stylish cushion perfect for your living space. Available in multiple sizes and designs.`,
-        tags: ["decorative", "comfort", "living room"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON",
+        technique,
+        content,
         size: specs.size || (i % 4 === 0 ? "12X12\"" : i % 4 === 1 ? "16X16\"" : i % 4 === 2 ? "18X18\"" : "20X20\""),
         season: specs.season || "EVERYDAY",
       };
@@ -266,22 +335,20 @@ const categoryData: Record<string, {
     products: Array.from({ length: 147 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('throw', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON + ACRYLIC";
+      const description = specs.description || "THROW";
       
       return {
         id: `throw-${slideNum}`,
         src: getLifestyleImageUrl('throw', slideNum),
-        images: [
-          getLifestyleImageUrl('throw', slideNum),
-          getImageUrl('throw', slideNum, 'image_01.jpg'),
-          getImageUrl('throw', slideNum, 'image_02.jpg'),
-          getTableImageUrl('throw', slideNum),
-        ],
+        images: getProductImages('throw', slideNum, true), // Use PNG for throw
         title: specs.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
         description: `Soft and warm throw blanket for ultimate comfort. Perfect for snuggling on the couch.`,
-        tags: ["soft", "cozy", "blanket"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON + ACRYLIC",
+        technique,
+        content,
         size: specs.size || (i % 2 === 0 ? "50X60\"" : "60X80\""),
         season: specs.season || "EVERYDAY",
       };
@@ -292,22 +359,20 @@ const categoryData: Record<string, {
     products: Array.from({ length: 42 }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('bedding', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON";
+      const description = specs.description || "BEDDING";
       
       return {
         id: `bedding-${slideNum}`,
         src: getLifestyleImageUrl('bedding', slideNum),
-        images: [
-          getLifestyleImageUrl('bedding', slideNum),
-          getImageUrl('bedding', slideNum, 'image_01.jpg'),
-          getImageUrl('bedding', slideNum, 'image_02.jpg'),
-          getTableImageUrl('bedding', slideNum),
-        ],
+        images: getProductImages('bedding', slideNum),
         title: specs.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
         description: `Luxury bedding collection for a comfortable night's sleep. High thread count and premium materials.`,
-        tags: ["luxury", "bedroom", "comfortable"],
+        tags: generateProductTags({ description, technique, content }),
         styleNumber: specs.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
-        technique: specs.technique || "WOVEN",
-        content: specs.content || "COTTON",
+        technique,
+        content,
         size: specs.size || (i % 4 === 0 ? "TWIN" : i % 4 === 1 ? "FULL" : i % 4 === 2 ? "QUEEN" : "KING"),
         season: specs.season || "EVERYDAY",
       };
@@ -315,43 +380,55 @@ const categoryData: Record<string, {
   }, 
   bathmats: {
     name: "Bath Mats",
-    products: Array.from({ length: 12 }, (_, i) => ({
-      id: `bathmat-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-      images: [
-        i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-        bathmatImage, // Image 2 (replace with actual product image)
-      ],
-      title: `CHD-BM-${String(i + 1).padStart(4, '0')}`,
-      description: `Highly absorbent and quick-drying bath mat. Bring spa-like luxury to your bathroom.`,
-      tags: ["spa", "bathroom", "absorbent"],
-      styleNumber: `CHD-BM-${String(i + 1).padStart(4, '0')}`,
-      technique: "WOVEN",
-      content: "COTTON + MICROFIBER",
-      size: i % 2 === 0 ? "20X30\"" : "24X36\"",
-      season: "EVERYDAY",
-      country: "INDIA",
-    })),
+    products: Array.from({ length: 149 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getDataFromJson('bathmat', slideNum) || {};
+      const technique = specs.technique || "WOVEN";
+      const content = specs.content || "COTTON + MICROFIBER";
+      const description = specs.description || "BATH MAT";
+      
+      return {
+        id: `bathmat-${slideNum}`,
+        src: getLifestyleImageUrlPng('bathmat', slideNum),
+        images: getProductImages('bathmat', slideNum, true), // Use PNG for bathmat
+        title: specs.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
+        description: specs.description || `Highly absorbent and quick-drying bath mat. Bring spa-like luxury to your bathroom.`,
+        tags: generateProductTags({ description, technique, content }),
+        styleNumber: specs.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
+        productDescription: specs.description,
+        technique,
+        content,
+        size: specs.size || (i % 2 === 0 ? "20X30\"" : "24X36\""),
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+      };
+    }),
   },
   chairpads: {
     name: "Tote Bags",
-    products: Array.from({ length: 10 }, (_, i) => ({
-      id: `chairpad-${i + 1}`,
-      src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-      images: [
-        i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-        chairpadImage, // Image 2 (replace with actual product image)
-      ],
-      title: `CHD-TB-${String(i + 1).padStart(4, '0')}`,
-      description: `Durable reusable tote bag for everyday carry, errands, and travel.`,
-      tags: ["tote", "bag", "carry"],
-      styleNumber: `CHD-TB-${String(i + 1).padStart(4, '0')}`,
-      technique: "WOVEN",
-      content: "COTTON + POLYESTER",
-      size: "STANDARD",
-      season: "EVERYDAY",
-      country: "INDIA",
-    })),
+    products: Array.from({ length: 46 }, (_, i) => {
+      const slideNum = i + 1;
+      const specs = getDataFromJson('totebag', slideNum) || {};
+      const technique = specs.technique || "PRINTED";
+      const content = specs.content || "COTTON";
+      const description = specs.description || "TOTE BAG";
+      
+      return {
+        id: `chairpad-${slideNum}`,
+        src: getLifestyleImageUrlPng('totebag', slideNum),
+        images: getProductImages('totebag', slideNum), // Use JPG for totebag
+        title: specs.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
+        description: specs.description || `Durable reusable tote bag for everyday carry, errands, and travel.`,
+        tags: generateProductTags({ description, technique, content }),
+        styleNumber: specs.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
+        productDescription: specs.description,
+        technique,
+        content,
+        size: specs.size || "STANDARD",
+        season: specs.season || "EVERYDAY",
+        country: specs.country || "INDIA",
+      };
+    }),
   },
 };
 
@@ -371,15 +448,18 @@ const ProductCard = ({
     ? product.images.filter(Boolean)
     : [product.src].filter(Boolean);
   
-  // Thumbnails: show lifestyle (0), image_01 (1), image_02 (2), and table (3)
-  // Only show thumbnails for images that exist
-  const thumbImages = [images[0], images[1], images[2], images[3]].filter(Boolean);
+  // Thumbnails: show lifestyle (0), image_01 (1), image_02 (2) - NO table images
+  // Only show thumbnails for images that exist (excluding table images)
+  const thumbImages = images.filter((img) => img && !img.includes('table_01'));
 
   const [hovered, setHovered] = useState(false);
   const [activeIdx, setActiveIdx] = useState(0);
   const [thumbHover, setThumbHover] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const resumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Track which thumbnail indices have failed to load (both jpg and png failed)
+  const [failedThumbIndices, setFailedThumbIndices] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     // Clear any existing timers
@@ -392,12 +472,21 @@ const ProductCard = ({
       resumeTimeoutRef.current = null;
     }
 
-    if (!hovered || thumbHover || images.length < 2) return;
+    // Count valid images (excluding failed ones)
+    const validImageCount = images.length - failedThumbIndices.size;
+    if (!hovered || thumbHover || validImageCount < 2) return;
 
     // Small delay before resuming auto-rotate after thumbnail hover
     resumeTimeoutRef.current = setTimeout(() => {
       intervalRef.current = setInterval(() => {
-        setActiveIdx((prev) => (prev + 1) % images.length);
+        setActiveIdx((prev) => {
+          // Find next valid index (skip failed images)
+          let nextIdx = (prev + 1) % images.length;
+          while (failedThumbIndices.has(nextIdx) && nextIdx !== prev) {
+            nextIdx = (nextIdx + 1) % images.length;
+          }
+          return nextIdx;
+        });
       }, 2000); // 2s while hovered
     }, 400);
 
@@ -405,7 +494,7 @@ const ProductCard = ({
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (resumeTimeoutRef.current) clearTimeout(resumeTimeoutRef.current);
     };
-  }, [hovered, thumbHover, images.length]);
+  }, [hovered, thumbHover, images.length, failedThumbIndices]);
 
   // Reset to first image when hover ends
   useEffect(() => {
@@ -455,16 +544,20 @@ const ProductCard = ({
             padding: isTableImage ? '8px' : '0',
           }}
           onError={(e) => {
-          const target = e.target as HTMLImageElement;
-          // Try png if jpg fails
-          if (target.src.endsWith('.jpg')) {
-            target.src = target.src.replace('.jpg', '.png');
-          } else {
-            // If png also fails or it's already png, hide the image and let rotation continue
-            // Don't fallback to lifestyle to avoid breaking the rotation sequence
-            target.style.display = 'none';
-          }
-        }}
+            const target = e.target as HTMLImageElement;
+            // Try png if jpg fails
+            if (target.src.endsWith('.jpg')) {
+              target.src = target.src.replace('.jpg', '.png');
+            } else {
+              // If png also fails or it's already png, mark as failed and move to next
+              setFailedThumbIndices(prev => new Set([...prev, activeIdx]));
+              // Find next valid image
+              const nextValidIdx = images.findIndex((_, idx) => idx !== activeIdx && !failedThumbIndices.has(idx));
+              if (nextValidIdx !== -1) {
+                setActiveIdx(nextValidIdx);
+              }
+            }
+          }}
         />
       </div>
 
@@ -481,34 +574,40 @@ const ProductCard = ({
             </div>
           </div>
 
-          {hovered && thumbImages.length > 1 && (
+          {hovered && thumbImages.filter((_, idx) => !failedThumbIndices.has(idx)).length > 1 && (
             <div className="flex gap-2 bg-background/90 backdrop-blur-md p-2 rounded-xl shadow-md border border-border/60">
-              {thumbImages.map((thumb, idx) => (
-                <button
-                  key={idx}
-                  onMouseEnter={(e) => {
-                    e.stopPropagation();
-                    setThumbHover(true);
-                    setActiveIdx(idx);
-                  }}
-                  onMouseLeave={() => setThumbHover(false)}
-                  className={`w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden border ${activeIdx === idx ? "border-accent" : "border-border"} transition`}
-                >
-                  <img
-                    src={thumb}
-                    alt={`thumb-${idx + 1}`}
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      const target = e.currentTarget;
-                      if (target.src.endsWith('.jpg')) {
-                        target.src = target.src.replace('.jpg', '.png');
-                      } else {
-                        target.src = product.src;
-                      }
+              {thumbImages.map((thumb, idx) => {
+                // Skip rendering thumbnails that failed to load
+                if (failedThumbIndices.has(idx)) return null;
+                
+                return (
+                  <button
+                    key={idx}
+                    onMouseEnter={(e) => {
+                      e.stopPropagation();
+                      setThumbHover(true);
+                      setActiveIdx(idx);
                     }}
-                  />
-                </button>
-              ))}
+                    onMouseLeave={() => setThumbHover(false)}
+                    className={`w-12 h-12 md:w-14 md:h-14 rounded-lg overflow-hidden border ${activeIdx === idx ? "border-accent" : "border-border"} transition`}
+                  >
+                    <img
+                      src={thumb}
+                      alt={`thumb-${idx + 1}`}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        if (target.src.endsWith('.jpg')) {
+                          target.src = target.src.replace('.jpg', '.png');
+                        } else {
+                          // Both jpg and png failed - mark as failed and hide
+                          setFailedThumbIndices(prev => new Set([...prev, idx]));
+                        }
+                      }}
+                    />
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -520,10 +619,37 @@ const ProductCard = ({
 const Category = () => {
   const { categoryId } = useParams<{ categoryId: string }>();
   const navigate = useNavigate();
-  const [searchQuery, setSearchQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+  
+  // Initialize state from sessionStorage if returning from product detail
+  const getInitialVisibleCount = () => {
+    if (categoryId) {
+      const saved = sessionStorage.getItem(`category-count-${categoryId}`);
+      if (saved) {
+        const count = parseInt(saved, 10);
+        return count > ITEMS_PER_PAGE ? count : ITEMS_PER_PAGE;
+      }
+    }
+    return ITEMS_PER_PAGE;
+  };
+  
+  const getInitialSearchQuery = () => {
+    if (categoryId) {
+      return sessionStorage.getItem(`category-search-${categoryId}`) || "";
+    }
+    return "";
+  };
+  
+  const [searchQuery, setSearchQuery] = useState(getInitialSearchQuery);
+  const [visibleCount, setVisibleCount] = useState(getInitialVisibleCount);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const [pendingScroll, setPendingScroll] = useState<number | null>(() => {
+    if (categoryId) {
+      const saved = sessionStorage.getItem(`category-scroll-${categoryId}`);
+      return saved ? parseInt(saved, 10) : null;
+    }
+    return null;
+  });
 
   const category = categoryId ? categoryData[categoryId] : null;
 
@@ -564,14 +690,43 @@ const Category = () => {
 
   const hasMore = visibleCount < filteredProducts.length;
 
-  // Reset visible count when search query or category changes
+  // Reset visible count when search query changes (but not on initial load with restored state)
+  const isInitialMount = useRef(true);
   useEffect(() => {
-    setVisibleCount(ITEMS_PER_PAGE);
-  }, [searchQuery, categoryId]);
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    // Only reset if not restoring scroll
+    if (pendingScroll === null) {
+      setVisibleCount(ITEMS_PER_PAGE);
+    }
+  }, [searchQuery]);
 
-  // Scroll to top when category changes
+  // Restore scroll position after products are rendered
   useEffect(() => {
-    window.scrollTo(0, 0);
+    if (pendingScroll !== null && visibleProducts.length > 0) {
+      // Wait for DOM to update with products
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          window.scrollTo({ top: pendingScroll, behavior: 'instant' });
+          // Clear saved data after restoring
+          if (categoryId) {
+            sessionStorage.removeItem(`category-scroll-${categoryId}`);
+            sessionStorage.removeItem(`category-count-${categoryId}`);
+            sessionStorage.removeItem(`category-search-${categoryId}`);
+          }
+          setPendingScroll(null);
+        }, 50);
+      });
+    }
+  }, [pendingScroll, visibleProducts.length, categoryId]);
+
+  // Scroll to top when category changes (only if not restoring scroll)
+  useEffect(() => {
+    if (pendingScroll === null) {
+      window.scrollTo(0, 0);
+    }
   }, [categoryId]);
 
   // Infinite scroll - load more when scrolling to bottom
@@ -599,6 +754,14 @@ const Category = () => {
   }, [hasMore, isLoadingMore]);
 
   const handleProductClick = (productId: string) => {
+    // Save scroll position and state before navigating
+    if (categoryId) {
+      sessionStorage.setItem(`category-scroll-${categoryId}`, window.scrollY.toString());
+      sessionStorage.setItem(`category-count-${categoryId}`, visibleCount.toString());
+      if (searchQuery) {
+        sessionStorage.setItem(`category-search-${categoryId}`, searchQuery);
+      }
+    }
     navigate(`/category/${categoryId}/${productId}`);
   };
 

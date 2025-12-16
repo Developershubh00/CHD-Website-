@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -61,10 +61,55 @@ function getLifestyleImageUrl(category: string, slideNumber: number): string {
   return `/images/${category}/slide_${slideNum}/lifestyle.jpg`;
 }
 
-// Get table image URL
+// Get lifestyle image URL as PNG (for categories that use PNG)
+function getLifestyleImageUrlPng(category: string, slideNumber: number): string {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  return `/images/${category}/slide_${slideNum}/lifestyle.png`;
+}
+
+// Get table image URL (not used anymore, kept for reference)
 function getTableImageUrl(category: string, slideNumber: number): string {
   const slideNum = String(slideNumber).padStart(3, '0');
   return `/images/${category}/slide_${slideNum}/table_01.png`;
+}
+
+// Build dynamic image array (excluding table images)
+// Returns: [lifestyle, image_01, image_02] - missing images will be handled by onError handlers
+function getProductImages(category: string, slideNumber: number, lifestylePng: boolean = false): string[] {
+  const slideNum = String(slideNumber).padStart(3, '0');
+  const images: string[] = [];
+  
+  // Add lifestyle image (some categories like TableRunner use PNG for lifestyle)
+  if (lifestylePng) {
+    images.push(`/images/${category}/slide_${slideNum}/lifestyle.png`);
+  } else {
+    images.push(`/images/${category}/slide_${slideNum}/lifestyle.jpg`); // Will fallback to png via onError
+  }
+  
+  // Add image_01 and image_02 - always try jpg first (onError will fallback to png)
+  images.push(`/images/${category}/slide_${slideNum}/image_01.jpg`);
+  images.push(`/images/${category}/slide_${slideNum}/image_02.jpg`);
+  
+  // Note: table_01.png is excluded - not shown in thumbnails or detail page
+  return images;
+}
+
+// Get 10 lifestyle images from different categories for rotation
+function getRotatingLifestyleImages(baseSlideNum: number): string[] {
+  // Mix lifestyle images from different categories to create variety
+  // Using different slide numbers from various categories
+  return [
+    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 1) % 195) + 1),
+    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 5) % 25) + 1),
+    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 10) % 556) + 1),
+    getLifestyleImageUrlPng('throw', ((baseSlideNum + 15) % 147) + 1),
+    getLifestyleImageUrlPng('bedding', ((baseSlideNum + 20) % 42) + 1),
+    getLifestyleImageUrlPng('TableRunner', ((baseSlideNum + 25) % 19) + 1),
+    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 30) % 195) + 1),
+    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 35) % 556) + 1),
+    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 40) % 25) + 1),
+    getLifestyleImageUrlPng('throw', ((baseSlideNum + 45) % 147) + 1),
+  ];
 }
 
 // ============================================================================
@@ -308,12 +353,7 @@ const categoryData: Record<string, {
       return {
         id: `rug-${slideNum}`,
         src: getLifestyleImageUrl('rugs', slideNum),
-        images: [
-          getLifestyleImageUrl('rugs', slideNum),
-          getImageUrl('rugs', slideNum, 'image_01.jpg'),
-          getImageUrl('rugs', slideNum, 'image_02.jpg'),
-          getTableImageUrl('rugs', slideNum),
-        ],
+        images: getProductImages('rugs', slideNum),
         title: data.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
         tags: ["handwoven", "natural", i % 3 === 0 ? "living room" : i % 3 === 1 ? "bedroom" : "dining"],
         // Product specifications from data.json
@@ -335,12 +375,7 @@ const categoryData: Record<string, {
       return {
         id: `placemat-${slideNum}`,
         src: getLifestyleImageUrl('placemat', slideNum),
-        images: [
-          getLifestyleImageUrl('placemat', slideNum),
-          getImageUrl('placemat', slideNum, 'image_01.jpg'),
-          getImageUrl('placemat', slideNum, 'image_02.jpg'),
-          getTableImageUrl('placemat', slideNum),
-        ],
+        images: getProductImages('placemat', slideNum),
         title: data.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
         tags: ["dining", "elegant", i % 2 === 0 ? "set" : "individual"],
         styleNumber: data.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
@@ -362,12 +397,7 @@ const categoryData: Record<string, {
         id: `runner-${slideNum}`,
         // Lifestyle first, then product images, then table
         src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-        images: [
-          getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
-          getImageUrl('TableRunner', slideNum, 'image_01.jpg'),
-          getImageUrl('TableRunner', slideNum, 'image_02.jpg'),
-          getTableImageUrl('TableRunner', slideNum),
-        ],
+        images: getProductImages('TableRunner', slideNum, true), // Use PNG for TableRunner
         title: data.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
         tags: ["dining", "elegant", "table decor"],
         styleNumber: data.styleNumber || `CHD-TR-${String(slideNum).padStart(4, '0')}`,
@@ -388,12 +418,7 @@ const categoryData: Record<string, {
       return {
         id: `cushion-${slideNum}`,
         src: getLifestyleImageUrl('cushion', slideNum),
-        images: [
-          getLifestyleImageUrl('cushion', slideNum),
-          getImageUrl('cushion', slideNum, 'image_01.jpg'),
-          getImageUrl('cushion', slideNum, 'image_02.jpg'),
-          getTableImageUrl('cushion', slideNum),
-        ],
+        images: getProductImages('cushion', slideNum),
         title: data.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
         tags: ["decorative", "comfort", "living room"],
         styleNumber: data.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
@@ -414,12 +439,7 @@ const categoryData: Record<string, {
       return {
         id: `throw-${slideNum}`,
         src: getLifestyleImageUrl('throw', slideNum),
-        images: [
-          getLifestyleImageUrl('throw', slideNum),
-          getImageUrl('throw', slideNum, 'image_01.jpg'),
-          getImageUrl('throw', slideNum, 'image_02.jpg'),
-          getTableImageUrl('throw', slideNum),
-        ],
+        images: getProductImages('throw', slideNum, true), // Use PNG for throw
         title: data.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
         tags: ["soft", "cozy", "blanket"],
         styleNumber: data.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
@@ -440,12 +460,7 @@ const categoryData: Record<string, {
       return {
         id: `bedding-${slideNum}`,
         src: getLifestyleImageUrl('bedding', slideNum),
-        images: [
-          getLifestyleImageUrl('bedding', slideNum),
-          getImageUrl('bedding', slideNum, 'image_01.jpg'),
-          getImageUrl('bedding', slideNum, 'image_02.jpg'),
-          getTableImageUrl('bedding', slideNum),
-        ],
+        images: getProductImages('bedding', slideNum),
         title: data.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
         tags: ["luxury", "bedroom", "comfortable"],
         styleNumber: data.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
@@ -459,17 +474,14 @@ const categoryData: Record<string, {
   }, 
   bathmats: {
     name: "Bath Mats",
-    products: Array.from({ length: 12 }, (_, i) => {
+    products: Array.from({ length: 149 }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('bathmat', slideNum) || {};
       
       return {
         id: `bathmat-${slideNum}`,
-        src: i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-        images: [
-          i % 2 === 0 ? lifestyleBathmat : bathmatImage,
-          bathmatImage,
-        ],
+        src: getLifestyleImageUrlPng('bathmat', slideNum),
+        images: getProductImages('bathmat', slideNum, true), // Use PNG for bathmat
         title: data.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
         tags: ["spa", "bathroom", "absorbent"],
         styleNumber: data.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
@@ -483,17 +495,14 @@ const categoryData: Record<string, {
   },
   chairpads: {
     name: "Tote Bags",
-    products: Array.from({ length: 10 }, (_, i) => {
+    products: Array.from({ length: 46 }, (_, i) => {
       const slideNum = i + 1;
-      const data = getDataFromJson('chairpad', slideNum) || {};
+      const data = getDataFromJson('totebag', slideNum) || {};
       
       return {
         id: `chairpad-${slideNum}`,
-        src: i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-        images: [
-          i % 2 === 0 ? lifestyleChairpad : chairpadImage,
-          chairpadImage,
-        ],
+        src: getLifestyleImageUrlPng('totebag', slideNum),
+        images: getProductImages('totebag', slideNum), // Use JPG for totebag
         title: data.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
         tags: ["tote", "carry", "bag"],
         styleNumber: data.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
@@ -513,6 +522,29 @@ export default function ProductDetail() {
   const [showContactForm, setShowContactForm] = useState(false);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0); // Currently displayed image index
   
+  // Magnifying glass state
+  const [magnifyActive, setMagnifyActive] = useState(false);
+  const [magnifyPosition, setMagnifyPosition] = useState({ x: 0, y: 0 });
+  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const [isDesktop, setIsDesktop] = useState(false);
+  const imageContainerRef = useRef<HTMLDivElement | null>(null);
+  
+  // Track actual loaded image URLs (after fallback from jpg to png)
+  const [loadedImageUrls, setLoadedImageUrls] = useState<Record<number, string>>({});
+  
+  // Track which image indices failed to load (both jpg and png failed)
+  const [failedImageIndices, setFailedImageIndices] = useState<Set<number>>(new Set());
+
+  // Check if desktop on mount and window resize
+  useEffect(() => {
+    const checkDesktop = () => {
+      setIsDesktop(window.innerWidth >= 1024);
+    };
+    checkDesktop();
+    window.addEventListener('resize', checkDesktop);
+    return () => window.removeEventListener('resize', checkDesktop);
+  }, []);
+  
   // Contact form state (matching ContactSection)
   const [formData, setFormData] = useState({
     name: "",
@@ -530,24 +562,83 @@ export default function ProductDetail() {
     ? category.products.find(p => p.id === productId) 
     : null;
 
-  // Scroll to top when product changes
+  // Scroll to top and reset state when product changes
   useEffect(() => {
     window.scrollTo(0, 0);
+    setSelectedImageIndex(0);
+    setFailedImageIndices(new Set());
+    setLoadedImageUrls({});
   }, [productId]);
+
+  // Auto-switch to next valid image if current one fails
+  useEffect(() => {
+    if (product && failedImageIndices.has(selectedImageIndex)) {
+      // Find next valid image
+      for (let i = 0; i < product.images.length; i++) {
+        if (!failedImageIndices.has(i)) {
+          setSelectedImageIndex(i);
+          break;
+        }
+      }
+    }
+  }, [failedImageIndices, selectedImageIndex, product]);
 
   // Handle manual image selection
   const handleImageSelect = (index: number) => {
     setSelectedImageIndex(index);
+    setMagnifyActive(false); // Reset magnify when image changes
+  };
+
+  // Magnifying glass handlers
+  const handleMouseEnter = () => {
+    setMagnifyActive(true);
+  };
+
+  const handleMouseLeave = () => {
+    setMagnifyActive(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!imageContainerRef.current) return;
+    
+    const rect = imageContainerRef.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    
+    // Calculate percentage position (0-100)
+    const percentX = (x / rect.width) * 100;
+    const percentY = (y / rect.height) * 100;
+    
+    // Clamp values between 0 and 100
+    const clampedX = Math.max(0, Math.min(100, percentX));
+    const clampedY = Math.max(0, Math.min(100, percentY));
+    
+    setMousePosition({ x, y });
+    setMagnifyPosition({ x: clampedX, y: clampedY });
   };
 
   const handlePrevImage = () => {
     if (!product?.images?.length) return;
-    setSelectedImageIndex((prev) => (prev - 1 + product.images.length) % product.images.length);
+    setSelectedImageIndex((prev) => {
+      let newIndex = (prev - 1 + product.images.length) % product.images.length;
+      // Skip failed images
+      while (failedImageIndices.has(newIndex) && newIndex !== prev) {
+        newIndex = (newIndex - 1 + product.images.length) % product.images.length;
+      }
+      return newIndex;
+    });
   };
 
   const handleNextImage = () => {
     if (!product?.images?.length) return;
-          setSelectedImageIndex((prev) => (prev + 1) % product.images.length);
+    setSelectedImageIndex((prev) => {
+      let newIndex = (prev + 1) % product.images.length;
+      // Skip failed images
+      while (failedImageIndices.has(newIndex) && newIndex !== prev) {
+        newIndex = (newIndex + 1) % product.images.length;
+      }
+      return newIndex;
+    });
   };
 
   if (!category || !product) {
@@ -633,12 +724,18 @@ export default function ProductDetail() {
       {/* Main Content - Mobile optimized with proper spacing */}
       <div className="flex-1 w-full pt-4 md:pt-6 pb-6 md:pb-6 overflow-y-auto relative">
         <div className="max-w-7xl mx-auto w-full px-4 md:px-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 lg:gap-12 lg:items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6 md:gap-8 lg:gap-12 lg:items-start">
             {/* Left Side - Product Image Gallery - Mobile optimized */}
-            <div className="flex flex-col space-y-3 md:space-y-4 lg:space-y-4 pt-12 md:pt-6 lg:pt-8">
-              {/* Main Image - with visible overflow for arrows */}
+            <div className="flex flex-col space-y-3 md:space-y-4 lg:space-y-4 pt-12 md:pt-6 lg:pt-8 relative">
+              {/* Main Image Container */}
               <div className="relative w-full aspect-square md:aspect-square lg:aspect-[4/5] lg:max-h-[70vh]">
-                <div className="relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden border-2 border-border bg-card shadow-lg group">
+                <div 
+                  ref={imageContainerRef}
+                  className="relative w-full h-full rounded-xl md:rounded-2xl overflow-hidden border-2 border-border bg-card shadow-lg group cursor-zoom-in"
+                  onMouseEnter={handleMouseEnter}
+                  onMouseLeave={handleMouseLeave}
+                  onMouseMove={handleMouseMove}
+                >
                   {/* Static background image to prevent white space */}
                   <img
                     src={product.images[selectedImageIndex]}
@@ -647,10 +744,18 @@ export default function ProductDetail() {
                     decoding="async"
                     className="w-full h-full object-contain absolute inset-0 bg-background"
                     aria-hidden="true"
+                    onLoad={(e) => {
+                      // Store the actual loaded URL for zoom panel
+                      const target = e.target as HTMLImageElement;
+                      setLoadedImageUrls(prev => ({ ...prev, [selectedImageIndex]: target.src }));
+                    }}
                     onError={(e) => {
                       const target = e.target as HTMLImageElement;
                       if (target.src.endsWith('.jpg')) {
                         target.src = target.src.replace('.jpg', '.png');
+                      } else {
+                        // Both jpg and png failed - mark as failed
+                        setFailedImageIndices(prev => new Set([...prev, selectedImageIndex]));
                       }
                     }}
                   />
@@ -668,22 +773,44 @@ export default function ProductDetail() {
                         duration: 0.5, 
                         ease: "easeInOut"
                       }}
+                      onLoad={(e) => {
+                        // Store the actual loaded URL for zoom panel
+                        const target = e.target as HTMLImageElement;
+                        setLoadedImageUrls(prev => ({ ...prev, [selectedImageIndex]: target.src }));
+                      }}
                       onError={(e) => {
                         const target = e.target as HTMLImageElement;
                         if (target.src.endsWith('.jpg')) {
                           target.src = target.src.replace('.jpg', '.png');
+                        } else {
+                          // Both jpg and png failed - mark as failed and switch to next valid image
+                          setFailedImageIndices(prev => new Set([...prev, selectedImageIndex]));
                         }
                       }}
                     />
                   </AnimatePresence>
 
+                  {/* Magnifying Glass Lens Indicator - Only on desktop */}
+                  {magnifyActive && isDesktop && (
+                    <div
+                      className="absolute w-24 h-24 rounded-full border-2 border-accent/70 pointer-events-none z-20"
+                      style={{
+                        left: `${mousePosition.x}px`,
+                        top: `${mousePosition.y}px`,
+                        transform: 'translate(-50%, -50%)',
+                        boxShadow: '0 0 0 2px rgba(255,255,255,0.3), 0 4px 12px rgba(0,0,0,0.3)',
+                      }}
+                    />
+                  )}
+
+
                   {/* Image Counter Indicator */}
-                  <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-background/80 backdrop-blur-sm px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-medium border border-border">
-                    {selectedImageIndex + 1} / {product.images.length}
+                  <div className="absolute top-3 right-3 md:top-4 md:right-4 bg-background/80 backdrop-blur-sm px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-medium border border-border z-10">
+                    {selectedImageIndex + 1} / {product.images.length - failedImageIndices.size}
                   </div>
 
               {/* Gradient overlay on hover */}
-              <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-background/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-0" />
                 </div>
 
                 {/* Manual navigation arrows (outside the clipped area) */}
@@ -711,40 +838,49 @@ export default function ProductDetail() {
 
             {/* Thumbnail Navigation - Modern Premium Design */}
             <div className="flex gap-2 md:gap-3 justify-center flex-shrink-0">
-              {product.images.map((image, index) => (
-                <button
-                  key={index}
-                  onClick={() => handleImageSelect(index)}
-                  className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-xl overflow-hidden border-2 transition-all duration-300 group ${
-                    selectedImageIndex === index
-                      ? "border-accent shadow-lg shadow-accent/20 scale-105"
-                      : "border-border hover:border-accent/50 hover:scale-105"
-                  }`}
-                  aria-label={`View image ${index + 1}`}
-                >
-                  <img
-                    src={image}
-                    alt={`${product.title} thumbnail ${index + 1}`}
-                    loading="lazy"
-                    decoding="async"
-                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
-                    onError={(e) => {
-                      const target = e.target as HTMLImageElement;
-                      if (target.src.endsWith('.jpg')) {
-                        target.src = target.src.replace('.jpg', '.png');
-                      }
-                    }}
-                  />
-                  
-                  {/* Active indicator overlay */}
-                  {selectedImageIndex === index && (
-                    <div className="absolute inset-0 bg-accent/10 border-2 border-accent rounded-xl" />
-                  )}
-                  
-                  {/* Hover effect */}
-                  <div className="absolute inset-0 bg-background/0 group-hover:bg-background/10 transition-colors duration-300 rounded-xl" />
-                </button>
-              ))}
+              {product.images.map((image, index) => {
+                // Skip rendering thumbnails for images that failed to load
+                if (failedImageIndices.has(index)) return null;
+                
+                return (
+                  <button
+                    key={index}
+                    onClick={() => handleImageSelect(index)}
+                    className={`relative flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24 rounded-xl overflow-hidden border-2 transition-all duration-300 group ${
+                      selectedImageIndex === index
+                        ? "border-accent shadow-lg shadow-accent/20 scale-105"
+                        : "border-border hover:border-accent/50 hover:scale-105"
+                    }`}
+                    aria-label={`View image ${index + 1}`}
+                  >
+                    <img
+                      src={image}
+                      alt={`${product.title} thumbnail ${index + 1}`}
+                      loading="lazy"
+                      decoding="async"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-110"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        if (target.src.endsWith('.jpg')) {
+                          // Try PNG fallback
+                          target.src = target.src.replace('.jpg', '.png');
+                        } else {
+                          // Both jpg and png failed - mark as failed and hide
+                          setFailedImageIndices(prev => new Set([...prev, index]));
+                        }
+                      }}
+                    />
+                    
+                    {/* Active indicator overlay */}
+                    {selectedImageIndex === index && (
+                      <div className="absolute inset-0 bg-accent/10 border-2 border-accent rounded-xl" />
+                    )}
+                    
+                    {/* Hover effect */}
+                    <div className="absolute inset-0 bg-background/0 group-hover:bg-background/10 transition-colors duration-300 rounded-xl" />
+                  </button>
+                );
+              })}
             </div>
             </div>
 
@@ -1119,6 +1255,26 @@ export default function ProductDetail() {
             </form>
           </motion.div>
         </div>
+      )}
+
+      {/* Zoom Panel - Fixed position overlay */}
+      {magnifyActive && isDesktop && imageContainerRef.current && (
+        <div 
+          className="fixed pointer-events-none rounded-2xl overflow-hidden border-2 border-border shadow-2xl"
+          style={{
+            top: imageContainerRef.current.getBoundingClientRect().top,
+            left: imageContainerRef.current.getBoundingClientRect().right + 24,
+            width: imageContainerRef.current.getBoundingClientRect().width,
+            height: imageContainerRef.current.getBoundingClientRect().height,
+            // Use the actual loaded URL (which may have been changed from .jpg to .png via onError)
+            backgroundImage: `url(${loadedImageUrls[selectedImageIndex] || product.images[selectedImageIndex]})`,
+            backgroundColor: 'hsl(var(--card))',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: '300%',
+            backgroundPosition: `${magnifyPosition.x}% ${magnifyPosition.y}%`,
+            zIndex: 9999,
+          }}
+        />
       )}
     </div>
   );

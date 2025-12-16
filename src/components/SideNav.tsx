@@ -46,7 +46,7 @@ export const SideNav = () => {
             className="group relative flex items-center justify-center w-12 h-12 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-all"
             activeClassName="text-foreground bg-accent/20"
           >
-            <item.icon className="h-5 w-5" />
+            <item.icon className="h-6 w-6" />
             <span className="absolute left-full ml-4 px-2 py-1 bg-card text-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-border">
               {item.label}
             </span>
