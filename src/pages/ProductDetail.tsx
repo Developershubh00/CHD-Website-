@@ -453,7 +453,7 @@ const categoryData: Record<string, {
   },
   bedding: {
     name: "Premium Bedding",
-    products: Array.from({ length: 42 }, (_, i) => {
+    products: Array.from({ length: 39 }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('bedding', slideNum) || {};
       
