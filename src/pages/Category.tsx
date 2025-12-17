@@ -516,13 +516,13 @@ const ProductCard = ({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="group relative aspect-square overflow-hidden bg-card border border-border cursor-pointer transition-all hover:border-accent hover:shadow-lg"
+      className="group relative aspect-square overflow-hidden bg-card border border-border cursor-pointer transition-all hover:border-accent"
     >
-      <div className="absolute inset-0 bg-background">
+      <div className="absolute inset-0 bg-transparent">
         {/* Background image only for non-table images to prevent white flash */}
         {!isTableImage && (
           <div
-            className="absolute inset-0 bg-background"
+            className="absolute inset-0 bg-transparent"
             style={{
               backgroundImage: `url(${mainImage})`,
               backgroundSize: "contain",
@@ -561,7 +561,7 @@ const ProductCard = ({
         />
       </div>
 
-      <div className="absolute inset-0 z-30 bg-gradient-to-t from-background/75 via-background/40 to-transparent transition-opacity duration-300 flex items-end p-6">
+      <div className="absolute inset-0 z-30 transition-opacity duration-300 flex items-end p-6">
         <div className="flex flex-col items-start gap-2">
           <div>
             <h3 className="text-lg font-light text-foreground mb-1 drop-shadow-sm">{product.title}</h3>
