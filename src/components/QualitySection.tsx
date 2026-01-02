@@ -49,51 +49,72 @@ export const QualitySection = () => {
   ];
 
   return (
-    <section className="py-20 md:py-28 px-6 bg-background">
-      <div className="max-w-3xl mx-auto">
-        <h2 
-          ref={headingRef}
-          className={`text-4xl md:text-6xl font-light mb-8 text-center transition-all duration-1000 ${
+    <section className="py-12 md:py-28 px-6 bg-background">
+      <div className="max-w-5xl mx-auto">
+        {/* Original Content Commented Out */}
+        {/*
+        <div className="max-w-3xl mx-auto">
+          <h2 
+            ref={headingRef}
+            className={`text-4xl md:text-6xl font-light mb-8 text-center transition-all duration-1000 ${
+              isVisible.heading 
+                ? 'opacity-100 translate-y-0' 
+                : 'opacity-0 translate-y-8'
+            }`}
+          >
+            Quality Management System
+          </h2>
+          
+          <p 
+            ref={descriptionRef}
+            className={`text-xl text-foreground leading-relaxed font-light mb-16 text-center transition-all duration-1000 ${
+              isVisible.description 
+                ? 'opacity-100 translate-y-0' 
+                : 'opacity-0 translate-y-8'
+            }`}
+          >
+            Clear quality checks and control measures from sampling to dispatch.
+          </p>
+
+          <div ref={featuresRef} className="grid md:grid-cols-3 gap-12">
+            {features.map((feature, index) => (
+              <div
+                key={index}
+                className={`text-center transition-all duration-700 ${
+                  isVisible.features 
+                    ? 'opacity-100 translate-y-0' 
+                    : 'opacity-0 translate-y-6'
+                }`}
+                style={{ 
+                  transitionDelay: isVisible.features ? `${index * 150}ms` : '0ms' 
+                }}
+              >
+                <div className="group cursor-default">
+                  <h3 className="text-xl font-light mb-3 transition-colors group-hover:text-blue-600">
+                    {feature.title}
+                  </h3>
+                  <p className="text-muted-foreground text-sm">{feature.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        */}
+
+        {/* New Quality Management Image */}
+        <div 
+          ref={headingRef} // Reusing ref for animation trigger
+          className={`transition-all duration-1000 overflow-hidden rounded-2xl md:rounded-3xl ${
             isVisible.heading 
               ? 'opacity-100 translate-y-0' 
               : 'opacity-0 translate-y-8'
           }`}
         >
-          Quality Management System
-        </h2>
-        
-        <p 
-          ref={descriptionRef}
-          className={`text-xl text-foreground leading-relaxed font-light mb-16 text-center transition-all duration-1000 ${
-            isVisible.description 
-              ? 'opacity-100 translate-y-0' 
-              : 'opacity-0 translate-y-8'
-          }`}
-        >
-          Clear quality checks and control measures from sampling to dispatch.
-        </p>
-
-        <div ref={featuresRef} className="grid md:grid-cols-3 gap-12">
-          {features.map((feature, index) => (
-            <div
-              key={index}
-              className={`text-center transition-all duration-700 ${
-                isVisible.features 
-                  ? 'opacity-100 translate-y-0' 
-                  : 'opacity-0 translate-y-6'
-              }`}
-              style={{ 
-                transitionDelay: isVisible.features ? `${index * 150}ms` : '0ms' 
-              }}
-            >
-              <div className="group cursor-default">
-                <h3 className="text-xl font-light mb-3 transition-colors group-hover:text-blue-600">
-                  {feature.title}
-                </h3>
-                <p className="text-muted-foreground text-sm">{feature.description}</p>
-              </div>
-            </div>
-          ))}
+          <img 
+            src="/quality-management.jpeg" 
+            alt="Quality Management System" 
+            className="w-full h-auto rounded-2xl md:rounded-3xl"
+          />
         </div>
       </div>
     </section>

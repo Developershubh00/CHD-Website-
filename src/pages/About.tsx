@@ -156,7 +156,7 @@ const About = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="min-h-screen bg-background">
       <div className="py-32 px-6">
         <div className="max-w-3xl mx-auto">
           <h1 

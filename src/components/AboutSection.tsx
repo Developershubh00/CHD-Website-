@@ -38,7 +38,7 @@ const AboutSection = () => {
           About Us
         </h2>
         
-        <div className="space-y-6 text-lg text-foreground/90 leading-relaxed font-light">
+        <div className="space-y-6 text-lg text-slate-700 leading-relaxed font-light">
           <p
             className={`transition-all duration-1000 delay-200 ${
               isVisible 
