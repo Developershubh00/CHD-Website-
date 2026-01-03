@@ -449,7 +449,7 @@ const ContactFormModal = () => {
 const ContactSection = () => {
   const currentYear = new Date().getFullYear();
 
-  const linkedinLink = { name: "LinkedIn", href: "#" };
+  const linkedinLink = { name: "LinkedIn", href: "https://www.linkedin.com/company/109806119/admin/dashboard/" };
 
   const quickLinksLeft = [
     { name: "About", href: "/about" },
