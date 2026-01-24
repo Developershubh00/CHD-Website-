@@ -7,6 +7,21 @@ import heroBathmat from "@/assets/hero-bathmat.jpg";
 import heroRunner from "@/assets/hero-runner.jpg";
 
 export const Hero = () => {
+  return (
+    <section className="relative h-screen flex items-center justify-center overflow-hidden">
+      <video
+        className="absolute inset-0 w-full h-full object-cover"
+        src="/CHD-intro.mp4"
+        autoPlay
+        muted
+        loop
+        playsInline
+      />
+    </section>
+  );
+};
+
+export const HeroCarousel = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const heroImages = [
