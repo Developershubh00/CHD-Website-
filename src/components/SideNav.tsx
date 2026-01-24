@@ -6,12 +6,12 @@ import logoGD from "@/assets/logo-gd-no-bg.png";
 import { Link } from "react-router-dom";
 
 const navItems = [
+  { to: "/#about-us", label: "About Us", icon: Info },
   { to: "/products", label: "Products", icon: Package },
   // { to: "/gallery", label: "Our Factory", icon: Image },
   { to: "/quality", label: "Quality", icon: Award },
   { to: "/certificate", label: "Certificate", icon: FileText },
   { to: "/compliance", label: "Compliance", icon: ShieldCheck },
-  { to: "/about", label: "About Us", icon: Info },
   { to: "/contact", label: "Contact", icon: Mail },
 ];
 
@@ -37,23 +37,40 @@ export const SideNav = () => {
         } w-20 flex flex-col items-center py-8 gap-6`}
       >
         {/* Logo at top */}
-        <Link to="/" className="cursor-pointer hover:opacity-80 transition-opacity">
+        <Link to="/#top" className="cursor-pointer hover:opacity-80 transition-opacity">
           <img src={logoGD} alt="GD Logo" className="w-12 h-12 object-contain mix-blend-multiply opacity-90" />
         </Link>
         
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className="group relative flex items-center justify-center w-12 h-12 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-all"
-            activeClassName="text-foreground bg-accent/20"
-          >
-            <item.icon className="h-6 w-6" />
-            <span className="absolute left-full ml-4 px-2 py-1 bg-card text-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-border">
-              {item.label}
-            </span>
-          </NavLink>
-        ))}
+        {navItems.map((item) => {
+          const isHashLink = item.to.includes("#");
+          const linkClassName =
+            "group relative flex items-center justify-center w-12 h-12 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-all";
+
+          if (isHashLink) {
+            return (
+              <Link key={item.to} to={item.to} className={linkClassName}>
+                <item.icon className="h-6 w-6" />
+                <span className="absolute left-full ml-4 px-2 py-1 bg-card text-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-border">
+                  {item.label}
+                </span>
+              </Link>
+            );
+          }
+
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={linkClassName}
+              activeClassName="text-foreground bg-accent/20"
+            >
+              <item.icon className="h-6 w-6" />
+              <span className="absolute left-full ml-4 px-2 py-1 bg-card text-foreground text-sm rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap border border-border">
+                {item.label}
+              </span>
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* Overlay for mobile */}
