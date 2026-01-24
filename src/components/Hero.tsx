@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import heroLifestyleFinal from "@/assets/hero-lifestyle-final.jpg";
 import heroRug from "@/assets/hero-rug-striped.jpg";
 import heroBedding from "@/assets/hero-bedding.jpg";
@@ -21,7 +21,7 @@ export const Hero = () => {
   );
 };
 
-export const HeroCarousel = () => {
+export const HeroCarousel = ({ overlayContent }: { overlayContent?: ReactNode }) => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const heroImages = [
@@ -58,17 +58,15 @@ export const HeroCarousel = () => {
       ))}
 
       {/* Dark overlay for text legibility */}
-      <div className="absolute inset-0 bg-black/20 pointer-events-none z-[2]" />
+      <div className="absolute inset-0 bg-black/30 pointer-events-none z-[2]" />
 
-      {/* Content overlay with text */}
-      <div className="relative z-10 max-w-5xl mx-auto px-6 text-center flex flex-col items-center justify-center min-h-screen">
-        <h1 className="font-playfair text-6xl md:text-8xl font-light tracking-wider text-white drop-shadow-2xl mb-4 animate-fade-in">
-          creative home decor
-        </h1>
-        <p className="font-playfair text-2xl md:text-3xl tracking-widest text-white drop-shadow-lg uppercase animate-fade-in-delay">
-          crafting trust
-        </p>
-      </div>
+      {overlayContent && (
+        <div className="absolute inset-0 z-[3] flex items-center justify-center px-6">
+          <div className="max-w-3xl mx-auto text-center text-white text-lg md:text-xl leading-relaxed font-light drop-shadow-2xl">
+            {overlayContent}
+          </div>
+        </div>
+      )}
 
       {/* Slide indicators */}
       <div className="absolute bottom-8 left-1/2 transform -translate-x-1/2 z-10 flex gap-2">
