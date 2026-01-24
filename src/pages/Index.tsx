@@ -8,7 +8,9 @@ import ContactSection from "@/components/ContactSection";
 const Index = () => {
   return (
     <div id="top" className="min-h-screen">
-      <Hero />
+      <div className="md:-ml-20 md:w-[calc(100%+5rem)]">
+        <Hero />
+      </div>
       <div className="space-y-0">
         <section>
           {/* <div className="px-6 pt-8 text-center mt-16">
