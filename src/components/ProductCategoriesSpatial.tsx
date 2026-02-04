@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
+import { getProductCardImages } from "@/lib/productCardImages";
 import rugImage from "@/assets/product-rug.png";
 import placematImage from "@/assets/product-placemat.png";
 import runnerImage from "@/assets/product-runner.png";
@@ -72,20 +73,12 @@ const baseImageMap: Record<string, string> = {
   chairpads: chairpadImage,
 };
 
-// Use lifestyle images from slides 1-6 for rotation
-const categoryImagesMap: Record<string, string[]> = {
-  rugs: [baseImageMap.rugs, ...Array.from({ length: 6 }, (_, i) => `/images/rugs/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`)],
-  placemats: [baseImageMap.placemats, ...Array.from({ length: 6 }, (_, i) => `/images/placemat/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`)],
-  runners: [baseImageMap.runners, ...Array.from({ length: 6 }, (_, i) => `/images/TableRunner/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`)],
-  cushions: [baseImageMap.cushions, ...Array.from({ length: 6 }, (_, i) => `/images/cushion/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`)],
-  throws: [baseImageMap.throws, ...Array.from({ length: 6 }, (_, i) => `/images/throw/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`)],
-  bedding: [baseImageMap.bedding, ...Array.from({ length: 6 }, (_, i) => `/images/bedding/slide_${String(i + 1).padStart(3, "0")}/lifestyle.jpg`)],
-  bathmats: [baseImageMap.bathmats, ...Array.from({ length: 6 }, (_, i) => `/images/bathmat/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`)],
-  chairpads: [baseImageMap.chairpads, ...Array.from({ length: 6 }, (_, i) => `/images/totebag/slide_${String(i + 1).padStart(3, "0")}/lifestyle.png`)],
-};
+const categoryImagesMap: Record<string, string[]> = Object.fromEntries(
+  categories.map((c) => [c.id, getProductCardImages(c.id, baseImageMap[c.id as keyof typeof baseImageMap])])
+);
 
-// Column-based staggered intervals (slower, smoother): col1+5 =>5.0s, col2+6 =>6.2s, col3+7=>7.4s, col4+8=>5.6s
-const intervalPattern = [5000, 6200, 7400, 8600];
+// Column-based staggered intervals (slower, smoother) – ~7.5s base so user can view each image
+const intervalPattern = [7500, 9300, 11100, 12900];
 
 // Snake pattern mapping for 4-column grid: top-left→right→bottom-right→left
 // Visual order: [0][1][2][3] then [7][6][5][4]
@@ -111,53 +104,32 @@ export const ProductCategoriesSpatial = () => {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
-  // rotate card images with snake pattern - each card rotates every 5000ms but offset by its position
+  // Single repeating stagger wave: no per-card interval, only one wave after another
+  const waveTimeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   useEffect(() => {
-    const intervals: Array<ReturnType<typeof setInterval> | null> = [];
-    const timeouts: Array<ReturnType<typeof setTimeout> | null> = [];
-    
-    categories.forEach((cat, idx) => {
-      const images = categoryImagesMap[cat.id] ?? [cat.image];
-      if (images.length < 2) {
-        intervals.push(null);
-        timeouts.push(null);
-        return;
-      }
-      // Map visual position (snake order) to delay: 100, 200, 300, 400, 500, 600, 700, 800
-      const visualPosition = snakePattern.indexOf(idx);
-      const offset = 100 + visualPosition * 100; // Offset in snake sequence
-      const interval = 5000; // Base rotation interval
-      
-      // First rotation at offset time, then start interval
-      const firstTimeout = setTimeout(() => {
-        setActiveIndexes((prev) => {
-          const next = [...prev];
-          next[idx] = (next[idx] + 1) % images.length;
-          return next;
-        });
-        
-        // Then start interval from that point
-        intervals[idx] = setInterval(() => {
+    const STAGGER_MS = 400;
+    const WAVE_INTERVAL_MS = 6000;
+
+    function runWave() {
+      waveTimeoutRef.current.forEach(clearTimeout);
+      waveTimeoutRef.current = [];
+      categories.forEach((cat, idx) => {
+        const images = categoryImagesMap[cat.id] ?? [cat.image];
+        if (images.length < 2) return;
+        const visualPosition = snakePattern.indexOf(idx);
+        const t = setTimeout(() => {
           setActiveIndexes((prev) => {
             const next = [...prev];
             next[idx] = (next[idx] + 1) % images.length;
             return next;
           });
-        }, interval);
-      }, offset);
-      
-      timeouts.push(firstTimeout);
-      intervals.push(null); // Will be set by setTimeout
-    });
-    
-    return () => {
-      intervals.forEach((timer) => {
-        if (timer) clearInterval(timer);
+        }, visualPosition * STAGGER_MS);
+        waveTimeoutRef.current.push(t);
       });
-      timeouts.forEach((timer) => {
-        if (timer) clearTimeout(timer);
-      });
-    };
+      waveTimeoutRef.current.push(setTimeout(runWave, WAVE_INTERVAL_MS));
+    }
+    runWave();
+    return () => waveTimeoutRef.current.forEach(clearTimeout);
   }, []);
 
   const cardImages = useMemo(
