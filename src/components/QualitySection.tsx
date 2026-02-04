@@ -101,7 +101,7 @@ export const QualitySection = () => {
         </div>
         */}
 
-        {/* New Quality Management Image */}
+        {/* Quality Management Video */}
         <div 
           ref={headingRef} // Reusing ref for animation trigger
           className={`transition-all duration-1000 overflow-hidden rounded-2xl md:rounded-3xl ${
@@ -110,10 +110,13 @@ export const QualitySection = () => {
               : 'opacity-0 translate-y-8'
           }`}
         >
-          <img 
-            src="/quality-management.jpeg" 
-            alt="Quality Management System" 
+          <video
             className="w-full h-auto rounded-2xl md:rounded-3xl"
+            src="/QualityManagement.mp4"
+            autoPlay
+            muted
+            loop
+            playsInline
           />
         </div>
       </div>
