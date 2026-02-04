@@ -8,9 +8,9 @@ import heroRunner from "@/assets/hero-runner.jpg";
 
 export const Hero = () => {
   return (
-    <section className="relative h-screen flex items-center justify-center overflow-hidden">
+    <section className="relative w-full overflow-hidden md:h-screen md:flex md:items-center md:justify-center">
       <video
-        className="absolute inset-0 w-full h-full object-cover"
+        className="w-full h-auto md:absolute md:inset-0 md:h-full md:w-full object-cover"
         src="/CHD-intro.mp4"
         autoPlay
         muted
