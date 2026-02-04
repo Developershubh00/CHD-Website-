@@ -19,9 +19,9 @@ const Index = () => {
           <div id="about-us">
             <HeroCarousel
               overlayContent={
-                <div className="space-y-6 text-xl font-semibold ">
-                  <h2 className="text-4xl md:text-6xl font-light mb-2">
-                      About Us
+                <div className="space-y-4">
+                  <h2 className="text-3xl sm:text-4xl md:text-6xl font-light mb-1">
+                    About Us
                   </h2>
                   <p>
                     Creative Home Decor is a B2B, export-focused home-textile manufacturer serving global retailers and sourcing teams and leading buyers. It's built on a simple approach: do our work with care and deliver what we promise. We design and produce everyday home textiles—placemats, table runners, rugs, bathmats, bedding, and cushions—with attention to detail and a steady commitment to consistency.
