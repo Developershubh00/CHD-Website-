@@ -2,10 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import oekotexLogo from "@/assets/oekotex-logo.png";
 import iso9001Logo from "@/assets/iso-9001-official.png";
 import iso14001Logo from "@/assets/iso-14001-official.png";
-import bsci from "@/assets/bsci.png";
 import iso45001Logo from "@/assets/iso-45001-official.png";
 import textilePatternBg from "@/assets/textile-pattern-bg.jpg";
 
+const bsci = "https://cdn.dribbble.com/userupload/46888850/file/689847f459868f88095e91428d2d1e3d.png";
 const Certificate = () => {
   const [isVisible, setIsVisible] = useState({
     heading: false,
