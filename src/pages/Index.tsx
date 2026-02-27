@@ -43,7 +43,7 @@ const Index = () => {
         <ProductCategoriesSpatial />
         {/* <ImageGallery /> */}
         <QualitySection />
-        
+        <CertificateSection />
         <ComplianceSection />
         <ContactSection />
       </div>
