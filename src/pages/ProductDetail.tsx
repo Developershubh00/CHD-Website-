@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+import { submitContact } from "@/lib/contact";
 // Fallback images  
 import rugImage from "@/assets/product-rug.png";
 import cushionImage from "@/assets/product-cushion.jpg";
@@ -672,20 +673,12 @@ export default function ProductDetail() {
     setSubmitStatus(null);
 
     try {
-      // Replace with your Google Apps Script Web App URL
-      const SCRIPT_URL = 'YOUR_GOOGLE_APPS_SCRIPT_URL_HERE';
-      
-      const response = await fetch(SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ ...formData, product: product?.title })
+      await submitContact({
+        ...formData,
+        message: `[Inquiry about ${product?.title}] ${formData.message}`,
+        product: product?.title,
       });
 
-      // Since we're using no-cors, we can't read the response
-      // Assume success if no error is thrown
       setSubmitStatus('success');
       setFormData({
         name: "",

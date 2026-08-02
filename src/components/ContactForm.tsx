@@ -270,7 +270,6 @@
 import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import * as z from "zod";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -284,19 +283,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { CheckCircle2 } from "lucide-react";
+import { contactFormSchema, submitContact, type ContactFormValues } from "@/lib/contact";
 
-// Replace with your Google Apps Script URL
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvEYzRXLxRlkzkKqBHSCsPlbilVtiu01vZHcGnl_mgkXD6rOGfBo0yXmSCFIaxf9NNJw/exec";
-
-const formSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").max(100),
-  company: z.string().min(2, "Company name must be at least 2 characters").max(100),
-  email: z.string().email("Invalid email address").max(255),
-  country: z.string().min(2, "Country is required").max(100),
-  message: z.string().min(10, "Message must be at least 10 characters").max(1000),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+type FormValues = ContactFormValues;
 
 export const ContactForm = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -305,7 +294,7 @@ export const ContactForm = () => {
   const { toast } = useToast();
   
   const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+    resolver: zodResolver(contactFormSchema),
     defaultValues: {
       name: "",
       company: "",
@@ -323,19 +312,8 @@ export const ContactForm = () => {
     setIsSubmitting(true);
     
     try {
-      const formData = new FormData();
-      formData.append("name", values.name);
-      formData.append("company", values.company);
-      formData.append("email", values.email);
-      formData.append("country", values.country);
-      formData.append("message", values.message);
+      await submitContact(values);
 
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        mode: "no-cors",
-        body: formData,
-      });
-      
       setShowSuccess(true);
       
       toast({

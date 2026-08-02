@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local environment
+.env
+
+# OCR training data (used only by local scripts)
+eng.traineddata

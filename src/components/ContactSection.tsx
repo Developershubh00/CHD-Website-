@@ -690,9 +690,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { MapPin, Phone, Mail, ArrowUpRight, Send, Linkedin, Loader2, Check } from "lucide-react";
-
-// Replace with your Google Apps Script URL
-const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw9Oijwraf6VEU8BHXnzI_wYTTBDF6LXjql32clKyqfAsasvMgPaiKBGVeT2inybPxTWQ/exec";
+import { quickContactSchema, submitContact } from "@/lib/contact";
 
 const ContactFormModal = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -705,25 +703,22 @@ const ContactFormModal = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<'success' | 'error' | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setSubmitStatus(null);
+    setValidationError(null);
 
+    const parsed = quickContactSchema.safeParse(formData);
+    if (!parsed.success) {
+      setValidationError(parsed.error.issues[0]?.message ?? "Please check the form and try again.");
+      return;
+    }
+
+    setIsSubmitting(true);
     try {
-      const formDataToSend = new FormData();
-      formDataToSend.append("name", formData.name);
-      formDataToSend.append("email", formData.email);
-      formDataToSend.append("phone", formData.phone);
-      formDataToSend.append("company", formData.company);
-      formDataToSend.append("message", formData.message);
-      
-      await fetch(GOOGLE_SCRIPT_URL, {
-        method: 'POST',
-        mode: 'no-cors',
-        body: formDataToSend
-      });
+      await submitContact(parsed.data);
 
       setSubmitStatus('success');
       setFormData({
@@ -733,7 +728,7 @@ const ContactFormModal = () => {
         company: "",
         message: ""
       });
-      
+
       setTimeout(() => {
         setIsOpen(false);
         setSubmitStatus(null);
@@ -859,8 +854,18 @@ const ContactFormModal = () => {
                 />
               </div>
 
+              {validationError && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-2.5 md:p-3 text-xs md:text-sm bg-red-50 dark:bg-red-950 text-red-800 dark:text-red-300 rounded-lg"
+                >
+                  {validationError}
+                </motion.div>
+              )}
+
               {submitStatus === 'success' && (
-                <motion.div 
+                <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
                   className="p-2.5 md:p-3 text-xs md:text-sm bg-green-50 dark:bg-green-950 text-green-800 dark:text-green-300 rounded-lg flex items-center gap-2"
@@ -905,7 +910,7 @@ const ContactFormModal = () => {
 const ContactSection = () => {
   const currentYear = new Date().getFullYear();
 
-  const linkedinLink = { name: "LinkedIn", href: "https://www.linkedin.com/company/109806119/admin/dashboard/" };
+  const linkedinLink = { name: "LinkedIn", href: "https://www.linkedin.com/company/109806119/" };
 
   const quickLinksLeft = [
     { name: "About", href: "/about" },
@@ -1118,22 +1123,6 @@ const ContactSection = () => {
             <p>
               © {currentYear} Creative Home Décor LLP. All rights reserved.
             </p>
-            <div className="flex gap-6">
-              <motion.a
-                href="#privacy"
-                className="hover:text-slate-900 transition-colors"
-                whileHover={{ y: -2 }}
-              >
-                Privacy Policy
-              </motion.a>
-              <motion.a
-                href="#terms"
-                className="hover:text-slate-900 transition-colors"
-                whileHover={{ y: -2 }}
-              >
-                Terms of Service
-              </motion.a>
-            </div>
           </div>
         </motion.div>
       </div>
