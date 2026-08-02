@@ -10,8 +10,9 @@ export const Hero = () => {
   return (
     <section className="relative w-full overflow-hidden md:h-screen md:flex md:items-center md:justify-center">
       <video
-        className="w-full h-auto md:absolute md:inset-0 md:h-full md:w-full object-cover"
+        className="w-full aspect-video md:absolute md:inset-0 md:h-full md:w-full md:aspect-auto object-cover"
         src="/CHD-intro.mp4"
+        poster="/CHD-intro-poster.jpg"
         autoPlay
         muted
         loop

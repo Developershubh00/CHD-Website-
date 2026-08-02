@@ -92,6 +92,7 @@ export const QualitySection = () => {
           <video
             className="w-full h-auto rounded-2xl md:rounded-3xl"
             src="/QualityManagement.mp4"
+            poster="/QualityManagement-poster.jpg"
             autoPlay
             muted
             loop
