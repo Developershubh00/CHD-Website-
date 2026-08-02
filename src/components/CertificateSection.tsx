@@ -4,7 +4,7 @@ import iso9001Logo from "@/assets/iso-9001-official.png";
 import iso14001Logo from "@/assets/iso-14001-official.png";
 import iso45001Logo from "@/assets/iso-45001-official.png";
 import textilePatternBg from "@/assets/textile-pattern-bg.jpg";
-const bsci = "https://cdn.dribbble.com/userupload/46888911/file/cb6961cd60604f1e2a6a568a36efcc72.jpeg";
+import bsci from "@/assets/bsci.png";
 export const CertificateSection = () => {
   const [isVisible, setIsVisible] = useState({
     heading: false,

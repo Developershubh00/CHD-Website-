@@ -4,11 +4,13 @@ export const QualitySection = () => {
   const [isVisible, setIsVisible] = useState({
     heading: false,
     description: false,
+    video: false,
     features: false
   });
-  
+
   const headingRef = useRef(null);
   const descriptionRef = useRef(null);
+  const videoRef = useRef(null);
   const featuresRef = useRef(null);
 
   useEffect(() => {
@@ -21,11 +23,13 @@ export const QualitySection = () => {
       entries.forEach(entry => {
         if (entry.isIntersecting) {
           const target = entry.target;
-          
+
           if (target === headingRef.current) {
             setTimeout(() => setIsVisible(prev => ({ ...prev, heading: true })), 100);
           } else if (target === descriptionRef.current) {
             setTimeout(() => setIsVisible(prev => ({ ...prev, description: true })), 300);
+          } else if (target === videoRef.current) {
+            setTimeout(() => setIsVisible(prev => ({ ...prev, video: true })), 200);
           } else if (target === featuresRef.current) {
             setTimeout(() => setIsVisible(prev => ({ ...prev, features: true })), 500);
           }
@@ -37,6 +41,7 @@ export const QualitySection = () => {
 
     if (headingRef.current) observer.observe(headingRef.current);
     if (descriptionRef.current) observer.observe(descriptionRef.current);
+    if (videoRef.current) observer.observe(videoRef.current);
     if (featuresRef.current) observer.observe(featuresRef.current);
 
     return () => observer.disconnect();
@@ -51,62 +56,36 @@ export const QualitySection = () => {
   return (
     <section className="py-12 md:py-28 px-6 bg-background">
       <div className="max-w-5xl mx-auto">
-        {/* Original Content Commented Out */}
-        {/*
         <div className="max-w-3xl mx-auto">
-          <h2 
+          <h2
             ref={headingRef}
             className={`text-4xl md:text-6xl font-light mb-8 text-center transition-all duration-1000 ${
-              isVisible.heading 
-                ? 'opacity-100 translate-y-0' 
+              isVisible.heading
+                ? 'opacity-100 translate-y-0'
                 : 'opacity-0 translate-y-8'
             }`}
           >
             Quality Management System
           </h2>
-          
-          <p 
+
+          <p
             ref={descriptionRef}
             className={`text-xl text-foreground leading-relaxed font-light mb-16 text-center transition-all duration-1000 ${
-              isVisible.description 
-                ? 'opacity-100 translate-y-0' 
+              isVisible.description
+                ? 'opacity-100 translate-y-0'
                 : 'opacity-0 translate-y-8'
             }`}
           >
             Clear quality checks and control measures from sampling to dispatch.
           </p>
-
-          <div ref={featuresRef} className="grid md:grid-cols-3 gap-12">
-            {features.map((feature, index) => (
-              <div
-                key={index}
-                className={`text-center transition-all duration-700 ${
-                  isVisible.features 
-                    ? 'opacity-100 translate-y-0' 
-                    : 'opacity-0 translate-y-6'
-                }`}
-                style={{ 
-                  transitionDelay: isVisible.features ? `${index * 150}ms` : '0ms' 
-                }}
-              >
-                <div className="group cursor-default">
-                  <h3 className="text-xl font-light mb-3 transition-colors group-hover:text-blue-600">
-                    {feature.title}
-                  </h3>
-                  <p className="text-muted-foreground text-sm">{feature.description}</p>
-                </div>
-              </div>
-            ))}
-          </div>
         </div>
-        */}
 
         {/* Quality Management Video */}
-        <div 
-          ref={headingRef} // Reusing ref for animation trigger
+        <div
+          ref={videoRef}
           className={`transition-all duration-1000 overflow-hidden rounded-2xl md:rounded-3xl ${
-            isVisible.heading 
-              ? 'opacity-100 translate-y-0' 
+            isVisible.video
+              ? 'opacity-100 translate-y-0'
               : 'opacity-0 translate-y-8'
           }`}
         >
@@ -118,6 +97,29 @@ export const QualitySection = () => {
             loop
             playsInline
           />
+        </div>
+
+        <div ref={featuresRef} className="grid md:grid-cols-3 gap-12 mt-16">
+          {features.map((feature, index) => (
+            <div
+              key={index}
+              className={`text-center transition-all duration-700 ${
+                isVisible.features
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-6'
+              }`}
+              style={{
+                transitionDelay: isVisible.features ? `${index * 150}ms` : '0ms'
+              }}
+            >
+              <div className="group cursor-default">
+                <h3 className="text-xl font-light mb-3 transition-colors group-hover:text-blue-600">
+                  {feature.title}
+                </h3>
+                <p className="text-muted-foreground text-sm">{feature.description}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </section>
