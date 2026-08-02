@@ -1,6 +1,12 @@
 import { ContactForm } from "@/components/ContactForm";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 const Contact = () => {
+  usePageMeta(
+    "Contact",
+    "Get in touch with Creative Home Decor for inquiries, bulk orders, and custom requirements."
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <div className="py-32 px-6">

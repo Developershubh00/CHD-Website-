@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import sedexLogo from "@/assets/sedex-logo.png";
 import textilePatternBg from "@/assets/textile-pattern-bg.jpg";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 const Compliance = () => {
+  usePageMeta(
+    "Compliance",
+    "SEDEX 4 Pillar SMETA compliance for ethical, audited manufacturing."
+  );
+
   const [isVisible, setIsVisible] = useState({
     heading: false,
     content: false

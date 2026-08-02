@@ -5,8 +5,14 @@ import iso14001Logo from "@/assets/iso-14001-official.png";
 import iso45001Logo from "@/assets/iso-45001-official.png";
 import textilePatternBg from "@/assets/textile-pattern-bg.jpg";
 import bsci from "@/assets/bsci.png";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 export const CertificateSection = () => {
+  usePageMeta(
+    "Certificates",
+    "OEKO-TEX Standard 100, ISO 9001:2015, ISO 14001:2015, ISO 45001:2018 certifications and BSCI membership."
+  );
+
   const [isVisible, setIsVisible] = useState({
     heading: false,
     oekotex: false,

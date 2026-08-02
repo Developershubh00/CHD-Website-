@@ -2,13 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-// Fallback images
-import rugImage from "@/assets/product-rug.png";
-import cushionImage from "@/assets/product-cushion.jpg";
-import lifestyleBathmat from "@/assets/lifestyle-bathmat.jpg";
-import bathmatImage from "@/assets/product-bathmat.jpg";
-import lifestyleChairpad from "@/assets/lifestyle-chairpad.jpg";
-import chairpadImage from "@/assets/product-chairpad.jpg";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 // Load ONLY data.json files (small - OK to eager load)
 const dataModules = import.meta.glob('/src/assets/**/data.json', {
@@ -65,12 +59,6 @@ function getLifestyleImageUrl(category: string, slideNumber: number): string {
 function getLifestyleImageUrlPng(category: string, slideNumber: number): string {
   const slideNum = String(slideNumber).padStart(3, '0');
   return `/images/${category}/slide_${slideNum}/lifestyle.png`;
-}
-
-// Get table image URL (not used anymore, kept for reference)
-function getTableImageUrl(category: string, slideNumber: number): string {
-  const slideNum = String(slideNumber).padStart(3, '0');
-  return `/images/${category}/slide_${slideNum}/table_01.png`;
 }
 
 // Build dynamic image array (excluding table images)
@@ -142,72 +130,6 @@ function generateProductTags(specs: { description?: string; technique?: string; 
   const uniqueTags = [...new Set(tags)].slice(0, 3);
   return uniqueTags;
 }
-
-// ============================================================================
-// OLD DATA STRUCTURE - COMMENTED OUT BUT PRESERVED
-// This was the original structure that used "images" array instead of "products"
-// ============================================================================
-/*
-const categoryData: Record<string, { name: string; images: Array<{ src: string; title: string; tags: string[] }> }> = {
-  rugs: {
-    name: "Rugs",
-    images: [
-      { src: lifestyleRug, title: "Handwoven Rug in Living Space", tags: ["handwoven", "living room", "natural"] },
-      { src: rugImage, title: "Handwoven Rug - Product View", tags: ["handwoven", "beige", "neutral"] },
-    ],
-  },
-  placemats: {
-    name: "Placemats",
-    images: [
-      { src: lifestylePlacemat, title: "Placemats - Morning Scene", tags: ["dining", "breakfast", "natural"] },
-      { src: placematImage, title: "Placemat Set", tags: ["set", "beige", "dining"] },
-    ],
-  },
-  runners: {
-    name: "Table Runners",
-    images: [
-      { src: lifestyleRunner, title: "Elegant Table Runner Setting", tags: ["elegant", "dining", "centerpiece"] },
-      { src: runnerImage, title: "Table Runner - Product View", tags: ["beige", "dining", "table"] },
-    ],
-  },
-  cushions: {
-    name: "Cushions",
-    images: [
-      { src: cushionImage, title: "Embroidered Cushion Collection", tags: ["embroidered", "decorative", "comfort", "living room"] },
-    ],
-  },
-  throws: {
-    name: "Throws",
-    images: [
-      { src: throwImage, title: "Throw Collection", tags: ["soft", "cozy", "blanket"] },
-    ],
-  },
-  bedding: {
-    name: "Premium Bedding",
-    images: [
-      { src: lifestyleBedding, title: "Luxurious Bedding Collection", tags: ["luxury", "bedroom", "comfortable"] },
-      { src: beddingImage, title: "Premium Bedding Set", tags: ["premium", "bedding", "set"] },
-    ],
-  }, 
-  bathmats: {
-    name: "Bath Mats",
-    images: [
-      { src: lifestyleBathmat, title: "Spa Bath Mat Experience", tags: ["spa", "bathroom", "absorbent"] },
-      { src: bathmatImage, title: "Bath Mat", tags: ["bathroom", "soft", "bath"] },
-    ],
-  },
-  chairpads: {
-    name: "Tote Bags",
-    images: [
-      { src: lifestyleChairpad, title: "Tote Bags in Use", tags: ["tote", "bag", "carry"] },
-      { src: chairpadImage, title: "Tote Bag Collection", tags: ["tote", "bag", "everyday"] },
-    ],
-  },
-};
-*/
-// ============================================================================
-// END OF OLD DATA STRUCTURE
-// ============================================================================
 
 // Product type definition (matching ProductDetail.tsx)
 type Product = {
@@ -653,6 +575,13 @@ const Category = () => {
 
   const category = categoryId ? categoryData[categoryId] : null;
 
+  usePageMeta(
+    category ? category.name : "Category Not Found",
+    category
+      ? `Browse ${category.products.length} ${category.name.toLowerCase()} from Creative Home Decor, a B2B home-textile manufacturer in Panipat, India.`
+      : undefined
+  );
+
   const filteredProducts = useMemo(() => {
     if (!category) return [];
     const query = searchQuery.trim().toLowerCase();
@@ -765,43 +694,6 @@ const Category = () => {
     navigate(`/category/${categoryId}/${productId}`);
   };
 
-  // ============================================================================
-  // OLD GALLERY MODAL FUNCTIONS - COMMENTED OUT BUT PRESERVED
-  // These were used when clicking images opened a fullscreen gallery modal
-  // ============================================================================
-  /*
-  const openGallery = (index: number) => {
-    setSelectedIndex(index);
-    document.body.style.overflow = "hidden";
-  };
-
-  const closeGallery = () => {
-    setSelectedIndex(null);
-    document.body.style.overflow = "unset";
-  };
-
-  const goToPrevious = () => {
-    if (selectedIndex !== null) {
-      setSelectedIndex((selectedIndex - 1 + filteredProducts.length) % filteredProducts.length);
-    }
-  };
-
-  const goToNext = () => {
-    if (selectedIndex !== null) {
-      setSelectedIndex((selectedIndex + 1) % filteredProducts.length);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Escape") closeGallery();
-    if (e.key === "ArrowLeft") goToPrevious();
-    if (e.key === "ArrowRight") goToNext();
-  };
-  */
-  // ============================================================================
-  // END OF OLD GALLERY MODAL FUNCTIONS
-  // ============================================================================
-
   if (!category) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -898,61 +790,6 @@ const Category = () => {
         </div>
       </div>
 
-      {/* ============================================================================
-          OLD FULLSCREEN GALLERY MODAL - COMMENTED OUT BUT PRESERVED
-          This was the modal that opened when clicking images before
-          ============================================================================ */}
-      {/* 
-      {selectedIndex !== null && (
-        <div
-          className="fixed inset-0 bg-background/95 backdrop-blur-sm z-50 flex items-center justify-center"
-          onKeyDown={handleKeyDown}
-          tabIndex={0}
-        >
-          <button
-            onClick={closeGallery}
-            className="absolute top-6 right-6 p-2 hover:bg-accent/10 rounded-full transition-colors z-10"
-          >
-            <X className="w-6 h-6" />
-          </button>
-
-          <button
-            onClick={goToPrevious}
-            className="absolute left-6 p-3 hover:bg-accent/10 rounded-full transition-colors z-10"
-          >
-            <ChevronLeft className="w-8 h-8" />
-          </button>
-
-          <button
-            onClick={goToNext}
-            className="absolute right-6 p-3 hover:bg-accent/10 rounded-full transition-colors z-10"
-          >
-            <ChevronRight className="w-8 h-8" />
-          </button>
-
-          <div className="max-w-5xl max-h-[90vh] w-full mx-6 flex flex-col">
-            <img
-              src={filteredProducts[selectedIndex].src}
-              alt={filteredProducts[selectedIndex].title}
-              className="w-full h-auto object-contain"
-            />
-            <div className="mt-6 text-center">
-              <h3 className="text-2xl font-light mb-2">{filteredProducts[selectedIndex].title}</h3>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {filteredProducts[selectedIndex].tags.map((tag) => (
-                  <span key={tag} className="text-sm px-3 py-1 bg-accent/20 text-accent rounded">
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      */}
-      {/* ============================================================================
-          END OF OLD FULLSCREEN GALLERY MODAL
-          ============================================================================ */}
     </>
   );
 };

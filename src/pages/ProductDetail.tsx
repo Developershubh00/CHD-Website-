@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { submitContact } from "@/lib/contact";
+import { usePageMeta } from "@/hooks/use-page-meta";
 // Fallback images  
 import rugImage from "@/assets/product-rug.png";
 import cushionImage from "@/assets/product-cushion.jpg";
@@ -559,9 +560,18 @@ export default function ProductDetail() {
 
   // Get category and product data
   const category = categoryId ? categoryData[categoryId] : null;
-  const product = category && productId 
-    ? category.products.find(p => p.id === productId) 
+  const product = category && productId
+    ? category.products.find(p => p.id === productId)
     : null;
+
+  usePageMeta(
+    product && category ? `${product.styleNumber || product.title} - ${category.name}` : "Product Not Found",
+    product
+      ? [product.productDescription, product.technique, product.content, product.size]
+          .filter(Boolean)
+          .join(" · ") || undefined
+      : undefined
+  );
 
   // Scroll to top and reset state when product changes
   useEffect(() => {

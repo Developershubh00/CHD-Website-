@@ -4,8 +4,11 @@ import { QualitySection } from "@/components/QualitySection";
 import { ComplianceSection } from "@/components/ComplianceSection";
 import { CertificateSection } from "@/components/CertificateSection";
 import ContactSection from "@/components/ContactSection";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 const Index = () => {
+  usePageMeta();
+
   return (
     <div id="top" className="min-h-screen">
       <div className="md:-ml-20 md:w-[calc(100%+5rem)]">
@@ -13,9 +16,6 @@ const Index = () => {
       </div>
       <div className="space-y-0">
         <section>
-          {/* <div className="px-6 pt-8 text-center mt-16">
-            
-          </div> */}
           <div id="about-us">
             <HeroCarousel
               overlayContent={
@@ -41,7 +41,6 @@ const Index = () => {
           </div>
         </section>
         <ProductCategoriesSpatial />
-        {/* <ImageGallery /> */}
         <QualitySection />
         <CertificateSection />
         <ComplianceSection />

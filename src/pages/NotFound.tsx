@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Home, ArrowLeft, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePageMeta } from "@/hooks/use-page-meta";
 
 // Floating thread/yarn component
 const FloatingThread = ({ delay, duration, x, y, rotation, length, color }: {
@@ -48,7 +49,7 @@ const WovenLine = ({ index, horizontal }: { index: number; horizontal: boolean }
   <motion.div
     className={`absolute ${horizontal ? 'h-px w-full' : 'w-px h-full'} bg-gradient-to-r from-transparent via-accent/20 to-transparent`}
     style={horizontal ? { top: `${index * 8}%` } : { left: `${index * 8}%` }}
-    initial={{ opacity: 0, scale: horizontal ? { scaleX: 0 } : { scaleY: 0 } }}
+    initial={{ opacity: 0, scaleX: horizontal ? 0 : 1, scaleY: horizontal ? 1 : 0 }}
     animate={{ opacity: 1, scaleX: 1, scaleY: 1 }}
     transition={{ duration: 1.5, delay: index * 0.05, ease: "easeOut" }}
   />
@@ -57,6 +58,8 @@ const WovenLine = ({ index, horizontal }: { index: number; horizontal: boolean }
 const NotFound = () => {
   const location = useLocation();
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+
+  usePageMeta("Page Not Found");
 
   useEffect(() => {
     console.error("404 Error: User attempted to access non-existent route:", location.pathname);
