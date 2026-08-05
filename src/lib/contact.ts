@@ -1,9 +1,12 @@
 import { z } from "zod";
 
-// Two different Apps Script deployments were wired into the site in the same
-// original commit and it is unknown which one is actually live, so every
-// submission is posted to BOTH endpoints. Once the owner confirms where a
-// live test submission arrives, delete the dead URL from this list.
+// Every submission is posted to BOTH Apps Script deployments on purpose.
+// A live test (Aug 2026) confirmed exactly one of them emails
+// vikram@creativehomedecorllp.com, but which URL maps to that script is not
+// recorded anywhere accessible, so BOTH are kept: posting to the inactive
+// one costs nothing, while removing the wrong one would silently lose every
+// lead. Do not remove either URL unless a submission starts producing
+// duplicate emails (that would mean both scripts became active).
 const ENDPOINTS = [
   "https://script.google.com/macros/s/AKfycbzvEYzRXLxRlkzkKqBHSCsPlbilVtiu01vZHcGnl_mgkXD6rOGfBo0yXmSCFIaxf9NNJw/exec",
   "https://script.google.com/macros/s/AKfycbw9Oijwraf6VEU8BHXnzI_wYTTBDF6LXjql32clKyqfAsasvMgPaiKBGVeT2inybPxTWQ/exec",
