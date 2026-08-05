@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Send } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { submitContact } from "@/lib/contact";
 import { usePageMeta } from "@/hooks/use-page-meta";
+import { slideCount } from "@/lib/catalog";
 // Fallback images  
 import rugImage from "@/assets/product-rug.png";
 import cushionImage from "@/assets/product-cushion.jpg";
@@ -94,24 +95,6 @@ function getProductImages(category: string, slideNumber: number, lifestylePng: b
   
   // Note: table_01.png is excluded - not shown in thumbnails or detail page
   return images;
-}
-
-// Get 10 lifestyle images from different categories for rotation
-function getRotatingLifestyleImages(baseSlideNum: number): string[] {
-  // Mix lifestyle images from different categories to create variety
-  // Using different slide numbers from various categories
-  return [
-    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 1) % 195) + 1),
-    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 5) % 25) + 1),
-    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 10) % 556) + 1),
-    getLifestyleImageUrlPng('throw', ((baseSlideNum + 15) % 147) + 1),
-    getLifestyleImageUrlPng('bedding', ((baseSlideNum + 20) % 42) + 1),
-    getLifestyleImageUrlPng('TableRunner', ((baseSlideNum + 25) % 19) + 1),
-    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 30) % 195) + 1),
-    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 35) % 556) + 1),
-    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 40) % 25) + 1),
-    getLifestyleImageUrlPng('throw', ((baseSlideNum + 45) % 147) + 1),
-  ];
 }
 
 // ============================================================================
@@ -347,7 +330,7 @@ const categoryData: Record<string, {
 }> = {
   rugs: {
     name: "Rugs",
-    products: Array.from({ length: 195 }, (_, i) => {
+    products: Array.from({ length: slideCount('rugs') }, (_, i) => {
       const slideNum = i + 1;
       // Load data from JSON file (manually curated)
       const data = getDataFromJson('rugs', slideNum) || {};
@@ -370,7 +353,7 @@ const categoryData: Record<string, {
   },
   placemats: {
     name: "Placemats",
-    products: Array.from({ length: 25 }, (_, i) => {
+    products: Array.from({ length: slideCount('placemat') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('placemat', slideNum) || {};
       
@@ -391,7 +374,7 @@ const categoryData: Record<string, {
   },
   runners: {
     name: "Table Runners",
-    products: Array.from({ length: 19 }, (_, i) => {
+    products: Array.from({ length: slideCount('TableRunner') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('TableRunner', slideNum) || {};
       
@@ -413,7 +396,7 @@ const categoryData: Record<string, {
   },
   cushions: {
     name: "Cushions",
-    products: Array.from({ length: 556 }, (_, i) => {
+    products: Array.from({ length: slideCount('cushion') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('cushion', slideNum) || {};
       
@@ -434,7 +417,7 @@ const categoryData: Record<string, {
   },
   throws: {
     name: "Throws",
-    products: Array.from({ length: 147 }, (_, i) => {
+    products: Array.from({ length: slideCount('throw') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('throw', slideNum) || {};
       
@@ -455,7 +438,7 @@ const categoryData: Record<string, {
   },
   bedding: {
     name: "Premium Bedding",
-    products: Array.from({ length: 39 }, (_, i) => {
+    products: Array.from({ length: slideCount('bedding') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('bedding', slideNum) || {};
       
@@ -476,7 +459,7 @@ const categoryData: Record<string, {
   }, 
   bathmats: {
     name: "Bath Mats",
-    products: Array.from({ length: 149 }, (_, i) => {
+    products: Array.from({ length: slideCount('bathmat') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('bathmat', slideNum) || {};
       
@@ -497,7 +480,7 @@ const categoryData: Record<string, {
   },
   chairpads: {
     name: "Tote Bags",
-    products: Array.from({ length: 46 }, (_, i) => {
+    products: Array.from({ length: slideCount('totebag') }, (_, i) => {
       const slideNum = i + 1;
       const data = getDataFromJson('totebag', slideNum) || {};
       

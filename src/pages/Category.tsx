@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { usePageMeta } from "@/hooks/use-page-meta";
+import { slideCount } from "@/lib/catalog";
 
 // Load ONLY data.json files (small - OK to eager load)
 const dataModules = import.meta.glob('/src/assets/**/data.json', {
@@ -82,24 +83,6 @@ function getProductImages(category: string, slideNumber: number, lifestylePng: b
   return images;
 }
 
-// Get 10 lifestyle images from different categories for rotation
-function getRotatingLifestyleImages(baseSlideNum: number): string[] {
-  // Mix lifestyle images from different categories to create variety
-  // Using different slide numbers from various categories
-  return [
-    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 1) % 195) + 1),
-    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 5) % 25) + 1),
-    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 10) % 556) + 1),
-    getLifestyleImageUrlPng('throw', ((baseSlideNum + 15) % 147) + 1),
-    getLifestyleImageUrlPng('bedding', ((baseSlideNum + 20) % 42) + 1),
-    getLifestyleImageUrlPng('TableRunner', ((baseSlideNum + 25) % 19) + 1),
-    getLifestyleImageUrlPng('rugs', ((baseSlideNum + 30) % 195) + 1),
-    getLifestyleImageUrlPng('cushion', ((baseSlideNum + 35) % 556) + 1),
-    getLifestyleImageUrlPng('placemat', ((baseSlideNum + 40) % 25) + 1),
-    getLifestyleImageUrlPng('throw', ((baseSlideNum + 45) % 147) + 1),
-  ];
-}
-
 // Generate searchable tags from product fields (description, technique, content)
 function generateProductTags(specs: { description?: string; technique?: string; content?: string }): string[] {
   const tags: string[] = [];
@@ -157,7 +140,7 @@ const categoryData: Record<string, {
 }> = {
   rugs: {
     name: "Rugs",
-    products: Array.from({ length: 195 }, (_, i) => {
+    products: Array.from({ length: slideCount('rugs') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('rugs', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -181,7 +164,7 @@ const categoryData: Record<string, {
   },
   placemats: {
     name: "Placemats",
-    products: Array.from({ length: 25 }, (_, i) => {
+    products: Array.from({ length: slideCount('placemat') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('placemat', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -205,7 +188,7 @@ const categoryData: Record<string, {
   },
   runners: {
     name: "Table Runners",
-    products: Array.from({ length: 19 }, (_, i) => {
+    products: Array.from({ length: slideCount('TableRunner') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('TableRunner', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -230,7 +213,7 @@ const categoryData: Record<string, {
   },
   cushions: {
     name: "Cushions",
-    products: Array.from({ length: 556 }, (_, i) => {
+    products: Array.from({ length: slideCount('cushion') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('cushion', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -254,7 +237,7 @@ const categoryData: Record<string, {
   },
   throws: {
     name: "Throws",
-    products: Array.from({ length: 147 }, (_, i) => {
+    products: Array.from({ length: slideCount('throw') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('throw', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -278,7 +261,7 @@ const categoryData: Record<string, {
   },
   bedding: {
     name: "Premium Bedding",
-    products: Array.from({ length: 39 }, (_, i) => {
+    products: Array.from({ length: slideCount('bedding') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('bedding', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -302,7 +285,7 @@ const categoryData: Record<string, {
   }, 
   bathmats: {
     name: "Bath Mats",
-    products: Array.from({ length: 149 }, (_, i) => {
+    products: Array.from({ length: slideCount('bathmat') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('bathmat', slideNum) || {};
       const technique = specs.technique || "WOVEN";
@@ -328,7 +311,7 @@ const categoryData: Record<string, {
   },
   chairpads: {
     name: "Tote Bags",
-    products: Array.from({ length: 46 }, (_, i) => {
+    products: Array.from({ length: slideCount('totebag') }, (_, i) => {
       const slideNum = i + 1;
       const specs = getDataFromJson('totebag', slideNum) || {};
       const technique = specs.technique || "PRINTED";
