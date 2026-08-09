@@ -38,9 +38,12 @@ function doPost(e) {
 
       case 'upload': { // {folderId, name, mimeType, base64}
         if (ALLOWED_FOLDERS.indexOf(req.folderId) < 0) return out({ ok: false, error: 'folder not allowed' });
-        var blob = Utilities.newBlob(Utilities.base64Decode(req.base64), req.mimeType, req.name);
+        // Build the blob stepwise: the 3-argument newBlob(bytes, type, name)
+        // form fails on large byte arrays in the V8 runtime.
+        var bytes = Utilities.base64Decode(String(req.base64).replace(/\s/g, ''));
+        var blob = Utilities.newBlob(bytes).setContentType(req.mimeType).setName(req.name);
         var f = DriveApp.getFolderById(req.folderId).createFile(blob);
-        return out({ ok: true, id: f.getId(), url: f.getUrl() });
+        return out({ ok: true, id: f.getId(), url: f.getUrl(), size: f.getSize() });
       }
 
       case 'download': { // {fileId} - images only
