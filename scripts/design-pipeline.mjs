@@ -274,7 +274,6 @@ async function compressPng(sharp, buffer) {
 // intake: new submissions -> generated lifestyle -> review board
 // ---------------------------------------------------------------------------
 async function intake() {
-  const sharp = (await import('sharp')).default;
   const model = await geminiImageModel();
   console.log(`intake: using image model ${model}`);
 
