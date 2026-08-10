@@ -67,12 +67,32 @@ function parseInches(sizeStr) {
   return a <= b ? [a, b] : [b, a]; // [short edge, long edge]
 }
 
+// Shape (aspect ratio) is the top priority after design accuracy: the same
+// spec must always render as the same outline. Absolute room scale is
+// allowed to drift (view purposes) but the proportions are not.
+function shapeGuidance(sizeStr) {
+  const dims = parseInches(sizeStr);
+  if (!dims) return '';
+  const [w, l] = dims;
+  const ratio = (l / w).toFixed(2);
+  const shape = l / w < 1.05 ? 'a SQUARE'
+    : l / w < 1.35 ? 'a slightly elongated rectangle'
+    : l / w < 1.8 ? 'a clearly elongated rectangle'
+    : 'a long, narrow rectangle';
+  return ` PROPORTION RULES (these outrank everything except design accuracy): ` +
+    `the product is ${shape} of ${w} by ${l} inches - its length is exactly ${ratio} times its width. ` +
+    `Reproduce the product's outline with EXACTLY these proportions, matching the shape shown in the attached image. ` +
+    `Perspective may foreshorten it, but the outline must still clearly read as a ${w}:${l} rectangle - ` +
+    `never more square and never more elongated than that.`;
+}
+
 function sizeGuidance(categoryLabel, sizeStr) {
   const cat = categoryLabel.toLowerCase();
   const dims = parseInches(sizeStr);
   const named = String(sizeStr).trim().toUpperCase();
   const base = (w, l, what) =>
-    `CRITICAL SCALE RULES: this ${what} measures ${w} by ${l} inches ` +
+    `SCALE GUIDANCE (secondary - approximate scale is acceptable, wrong proportions are not): ` +
+    `this ${what} measures ${w} by ${l} inches ` +
     `(${(w / 12).toFixed(1)} by ${(l / 12).toFixed(1)} feet). `;
   const tail = ' Render the product at EXACTLY this scale relative to every reference object in the scene; do not enlarge it to fill the space, and preserve its true width-to-length proportions. Never render any text, numbers, labels or measurements anywhere in the image.';
 
@@ -142,6 +162,7 @@ const OWNER_PROMPT = (category, size, notes) =>
   `size of the product in the lifestyle image. Product: ${category}, actual size ${size}. ` +
   (sizeGuidance(category, size).includes('scene m') ? '' :
     'Suggested setting: ' + CATEGORIES[category.toLowerCase()].scene + '. ') +
+  shapeGuidance(size) +
   sizeGuidance(category, size) +
   (notes ? ' Additional instructions from the designer: ' + notes : '');
 
