@@ -205,10 +205,76 @@ async function geminiImageModel() {
 }
 
 const FRAMING_RULES =
-  ' FRAMING RULES: compose the scene for a SQUARE 1:1 frame and fill it completely edge to edge -' +
-  ' no letterboxing, no bars, no borders. The ENTIRE product must be fully visible inside the frame' +
-  ' with clear margin on every side; when something must be cut off by the frame edge, crop' +
-  ' background, floor or furniture - NEVER any part of the product.';
+  ' FRAMING RULES: the IMAGE CANVAS is square 1:1 - fill the canvas completely edge to edge with' +
+  ' the scene, no letterboxing, no bars. CRITICAL: only the CANVAS is square. The PRODUCT ITSELF is' +
+  ' NOT square - it keeps its own true rectangular proportions exactly as specified in the' +
+  ' proportion rules. NEVER stretch, widen or reshape the product to fill the square canvas; fill' +
+  ' the canvas with more scene (floor, walls, furniture) instead. The entire product stays fully' +
+  ' visible with clear margin on every side; when something must be cut off at the canvas edge,' +
+  ' crop background or furniture - NEVER any part of the product.';
+
+function geminiTextModel() {
+  const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
+  const names = models.map((m) => m.name.replace(/^models\//, ''));
+  const pick = names.find((n) => /^gemini-[\d.]+-flash$/.test(n))
+    || names.find((n) => n.includes('flash') && !n.includes('image') && !n.includes('live') && !n.includes('tts'));
+  if (!pick) throw new Error('no Gemini text model available');
+  return pick;
+}
+
+function geminiCall(model, parts) {
+  const body = curlJson(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+    { contents: [{ parts }] }
+  );
+  if (body.error) throw new Error(`gemini ${model}: ${JSON.stringify(body.error).slice(0, 300)}`);
+  return (body?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
+}
+
+function extractJson(text) {
+  const m = String(text).match(/\{[\s\S]*\}/);
+  if (!m) throw new Error('no JSON in model response: ' + String(text).slice(0, 200));
+  return JSON.parse(m[0]);
+}
+
+// Deep-scan the product image BEFORE generating, so the generation prompt
+// carries an explicit inventory of the design (border, field, motifs,
+// colours) instead of relying on the model glancing at the reference.
+function analyzeProduct(textModel, imageBase64, mimeType) {
+  const text = geminiCall(textModel, [
+    { text:
+      'You are cataloguing a home-textile product for EXACT visual reproduction. ' +
+      'Examine the attached product image minutely and return STRICT JSON only, no prose: ' +
+      '{"field_pattern": "precise description of the main surface pattern and its repeat", ' +
+      '"border": "precise description of the border/edge treatment, or \'none\'", ' +
+      '"colors": ["dominant colours in order"], ' +
+      '"texture": "weave/pile/texture description", ' +
+      '"distinctive": "the 2-3 most recognisable details a copy must get right"}' },
+    { inlineData: { mimeType, data: imageBase64 } },
+  ]);
+  return extractJson(text);
+}
+
+// Compare the generated lifestyle against the real product. Returns
+// {fidelity: 0-10, shapeOk: bool, issues: [...]}.
+function verifyLifestyle(textModel, frontB64, frontMime, genB64, dims) {
+  const shapeAsk = dims
+    ? `The real product is ${dims[0]}x${dims[1]} inches, so its outline must read as a ${dims[0]}:${dims[1]} rectangle (length ${(dims[1] / dims[0]).toFixed(2)}x the width), never square. `
+    : '';
+  const text = geminiCall(textModel, [
+    { text:
+      'Image 1 is the REAL product design. Image 2 is a generated lifestyle photo that must show the SAME product. ' +
+      shapeAsk +
+      'Compare them strictly and return STRICT JSON only: ' +
+      '{"fidelity": <0-10, 10 = pattern/border/colours identical>, ' +
+      '"shape_ok": <true if the product outline proportions in image 2 match the real product, false if squared/stretched>, ' +
+      '"issues": ["each concrete discrepancy: wrong border, missing motif, colour shift, wrong proportions, ..."]}' },
+    { inlineData: { mimeType: frontMime, data: frontB64 } },
+    { inlineData: { mimeType: 'image/png', data: genB64 } },
+  ]);
+  const out = extractJson(text);
+  return { fidelity: Number(out.fidelity) || 0, shapeOk: !!out.shape_ok, issues: out.issues || [] };
+}
 
 async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   const request = {
@@ -250,6 +316,47 @@ async function squareCrop(buffer) {
     console.log(`squareCrop skipped (${e.message}) - uploading original`);
     return buffer;
   }
+}
+
+// Full quality loop: deep-scan the product, generate with the design
+// inventory in the prompt, verify the output against the original, and retry
+// with concrete corrections. Returns { buf, check } for the best attempt.
+async function generateVerified(imageModel, textModel, prompt, front, dims, style) {
+  let designSpec = '';
+  try {
+    const a = analyzeProduct(textModel, front.base64, front.mimeType);
+    designSpec = ' DESIGN INVENTORY - the generated product must reproduce ALL of these exactly:' +
+      ` field pattern: ${a.field_pattern}; border: ${a.border};` +
+      ` colours: ${(a.colors || []).join(', ')}; texture: ${a.texture};` +
+      ` most distinctive details: ${a.distinctive}.`;
+    console.log(`  ${style}: scanned - border: ${String(a.border).slice(0, 60)}`);
+  } catch (e) {
+    console.log(`  ${style}: deep-scan failed (${e.message}) - generating without inventory`);
+  }
+
+  let best = null;
+  let corrections = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const buf = await generateLifestyle(imageModel, prompt + designSpec + corrections, front.base64, front.mimeType);
+    let check;
+    try {
+      check = verifyLifestyle(textModel, front.base64, front.mimeType, buf.toString('base64'), dims);
+    } catch (e) {
+      console.log(`  ${style}: verification failed (${e.message}) - accepting attempt as-is`);
+      check = { fidelity: 7, shapeOk: true, issues: ['auto-verification unavailable'] };
+    }
+    console.log(`  ${style} attempt ${attempt}: fidelity ${check.fidelity}/10, shape ${check.shapeOk ? 'ok' : 'WRONG'}` +
+      (check.issues.length ? ' | ' + check.issues.slice(0, 3).join('; ').slice(0, 160) : ''));
+    if (!best
+      || (check.shapeOk && !best.check.shapeOk)
+      || (check.shapeOk === best.check.shapeOk && check.fidelity > best.check.fidelity)) {
+      best = { buf, check };
+    }
+    if (check.shapeOk && check.fidelity >= 8) break;
+    corrections = ' CORRECTIONS - a previous attempt failed verification; you MUST fix all of these: ' +
+      check.issues.join('; ') + '.';
+  }
+  return best;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,7 +418,8 @@ async function compressPng(sharp, buffer) {
 // ---------------------------------------------------------------------------
 async function intake() {
   const model = await geminiImageModel();
-  console.log(`intake: using image model ${model}`);
+  const textModel = geminiTextModel();
+  console.log(`intake: image model ${model}, analysis model ${textModel}`);
 
   const { values: responses } = await bridge('read', { sheetId: RESPONSES_SHEET });
   if (responses.length < 2) { console.log('intake: no submissions in the sheet'); return; }
@@ -349,7 +457,10 @@ async function intake() {
     const prompt = OWNER_PROMPT(categoryLabel, String(row[col.size] || '').trim(),
       [designerNotes, redoNotes].filter(Boolean).join('. '));
 
-    const lifestyle = await generateLifestyle(model, prompt, front.base64, front.mimeType);
+    const dims = parseInches(String(row[col.size] || ''));
+    const result = await generateVerified(model, textModel, prompt, front, dims, style);
+    const lifestyle = result.buf;
+    const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`;
 
     const suffix = isRedo ? `-v${Date.now() % 1000}` : '';
     const up = await bridge('upload', {
@@ -370,14 +481,14 @@ async function intake() {
       });
       await bridge('update', {
         sheetId: REVIEW_BOARD, range: `E${existing.row}:H${existing.row}`,
-        values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'}`]],
+        values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`]],
       });
     } else {
       await bridge('append', {
         sheetId: REVIEW_BOARD,
         rows: [[new Date().toISOString().slice(0, 10), style, categoryLabel,
                 String(row[col.name] || row[col.email] || '').trim(),
-                upFront.url, up.url, '', '', '']],
+                upFront.url, up.url, '', qcNote, '']],
       });
     }
     processed++;
