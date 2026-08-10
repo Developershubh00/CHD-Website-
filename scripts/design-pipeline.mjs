@@ -302,7 +302,12 @@ async function publish({ commit }) {
       season: String(submission[col.season] || '').trim(),
     }, null, 2) + '\n');
 
-    const toPng = async (b64) => compressPng(sharp, await sharp(Buffer.from(b64, 'base64')).png().toBuffer());
+    // Designer uploads are often print-resolution masters (10k+ px, tens of
+    // MB). Cap at 2400px on the long edge - plenty for the product-page zoom -
+    // before compressing.
+    const toPng = async (b64) => compressPng(sharp, await sharp(Buffer.from(b64, 'base64'))
+      .resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true })
+      .png().toBuffer());
     fs.writeFileSync(path.join(newImages, 'lifestyle.png'), await toPng(lifestyle.base64));
     fs.writeFileSync(path.join(newImages, 'image_01.png'), await toPng(front.base64));
     if (close) fs.writeFileSync(path.join(newImages, 'image_02.png'), await toPng(close.base64));
