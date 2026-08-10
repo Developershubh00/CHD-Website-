@@ -68,16 +68,29 @@ export const QualitySection = () => {
             Quality Management System
           </h2>
 
-          <p
+          <div
             ref={descriptionRef}
-            className={`text-xl text-foreground leading-relaxed font-light mb-16 text-center transition-all duration-1000 ${
+            className={`mb-16 space-y-6 transition-all duration-1000 ${
               isVisible.description
                 ? 'opacity-100 translate-y-0'
                 : 'opacity-0 translate-y-8'
             }`}
           >
-            Clear quality checks and control measures from sampling to dispatch.
-          </p>
+            <p className="text-xl text-foreground leading-relaxed font-light text-center">
+              Clear quality checks and control measures from sampling to dispatch.
+            </p>
+            <p className="text-lg text-muted-foreground leading-relaxed font-light text-center">
+              Every order moves through the same disciplined path. Yarns and raw
+              materials are checked at intake, weaving and stitching are inspected
+              on the floor while production runs, and each finished piece is
+              measured against the approved sample before it is packed.
+            </p>
+            <p className="text-lg text-muted-foreground leading-relaxed font-light text-center">
+              The same standards apply to every order, first shipment or repeat
+              program — so the quality our buyers approve is the quality that
+              arrives, container after container.
+            </p>
+          </div>
         </div>
 
         {/* Quality Management Video */}
