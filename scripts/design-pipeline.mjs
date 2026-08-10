@@ -23,7 +23,7 @@
  * (scripts/chd-pipeline-bridge.gs) so no Google credentials live here.
  *
  * Env: CHD_BRIDGE_URL, CHD_BRIDGE_TOKEN, GEMINI_API_KEY
- *      GEMINI_IMAGE_MODEL (optional override)
+ *      GEMINI_IMAGE_MODEL, GEMINI_TEXT_MODEL (optional overrides)
  *
  * Usage (from the repo root):
  *   bun scripts/design-pipeline.mjs intake
@@ -194,14 +194,22 @@ async function bridge(op, payload = {}) {
   return body;
 }
 
+// Google retires older models for newer API projects while still listing
+// them ("no longer available to new users"), so prefer the newest stable
+// version and live-ping text models before trusting them.
+const geminiVersion = (n) => parseFloat((n.match(/gemini-([\d.]+)/) || [])[1] || '0');
+
 async function geminiImageModel() {
   if (process.env.GEMINI_IMAGE_MODEL) return clean(process.env.GEMINI_IMAGE_MODEL);
   const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
-  const candidates = models
-    .map((m) => m.name.replace(/^models\//, ''))
-    .filter((n) => n.includes('image') && !n.includes('imagen'));
-  if (!candidates.length) throw new Error('no Gemini image-generation model available');
-  return candidates[0];
+  const names = models.map((m) => m.name.replace(/^models\//, ''));
+  const stable = names
+    .filter((n) => /^gemini-[\d.]+-flash-image$/.test(n))
+    .sort((a, b) => geminiVersion(b) - geminiVersion(a));
+  const loose = names.filter((n) => n.includes('image') && !n.includes('imagen'));
+  const pick = stable[0] || loose[0];
+  if (!pick) throw new Error('no Gemini image-generation model available');
+  return pick;
 }
 
 const FRAMING_RULES =
@@ -216,10 +224,24 @@ const FRAMING_RULES =
 function geminiTextModel() {
   const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
   const names = models.map((m) => m.name.replace(/^models\//, ''));
-  const pick = names.find((n) => /^gemini-[\d.]+-flash$/.test(n))
-    || names.find((n) => n.includes('flash') && !n.includes('image') && !n.includes('live') && !n.includes('tts'));
-  if (!pick) throw new Error('no Gemini text model available');
-  return pick;
+  const versioned = names
+    .filter((n) => /^gemini-[\d.]+-flash$/.test(n))
+    .sort((a, b) => geminiVersion(b) - geminiVersion(a));
+  const candidates = [...new Set([
+    clean(process.env.GEMINI_TEXT_MODEL),
+    'gemini-flash-latest',
+    ...versioned,
+    ...names.filter((n) => n.includes('flash') && !n.includes('image') && !n.includes('live') && !n.includes('tts')),
+  ])].filter((n) => n && (names.includes(n) || n === clean(process.env.GEMINI_TEXT_MODEL)));
+  for (const candidate of candidates) {
+    try {
+      geminiCall(candidate, [{ text: 'Reply with the single word: ok' }]);
+      return candidate;
+    } catch (e) {
+      console.log(`  text model ${candidate} unavailable, trying next (${String(e.message).slice(0, 100)})`);
+    }
+  }
+  throw new Error('no working Gemini text model found');
 }
 
 function geminiCall(model, parts) {
