@@ -16,12 +16,11 @@ run: publish yesterday's approvals, then process new submissions for review.
 
 ## Run
 
-4. **Publish approvals**: `bun scripts/design-pipeline.mjs publish`
-   - If it stages designs, verify before pushing:
-     `bunx tsc --noEmit -p tsconfig.app.json` and `bun run build` must pass.
-   - Then run `bun scripts/design-pipeline.mjs publish --commit` to commit and
-     push to main (Vercel deploys automatically).
-   - If tsc/build fail, do NOT push; report the error verbatim.
+4. **Publish approvals**: `bun scripts/design-pipeline.mjs publish --commit`
+   - The script verifies internally (tsc + full build) BEFORE committing and
+     refuses to push if verification fails — report any such error verbatim.
+   - A previously staged slide (from an interrupted earlier run) is resumed
+     and included in the commit, not skipped.
 5. **Process new submissions**: `bun scripts/design-pipeline.mjs intake`
    - This generates lifestyle images and posts them to the review board.
    - If a generation looks obviously broken (script errors, empty images),

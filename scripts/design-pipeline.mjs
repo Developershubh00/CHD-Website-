@@ -72,24 +72,29 @@ const BRIDGE_URL = clean(process.env.CHD_BRIDGE_URL);
 const BRIDGE_TOKEN = clean(process.env.CHD_BRIDGE_TOKEN);
 const GEMINI_KEY = clean(process.env.GEMINI_API_KEY);
 
+// All HTTP goes through curl: bun's native fetch gets connection resets
+// behind the sandbox egress proxy, curl is reliable there.
+import { execFileSync } from 'child_process';
+function curlJson(url, body) {
+  const args = ['-sL', '--max-time', '600', '-H', 'Content-Type: application/json'];
+  if (body !== undefined) args.push('--data-binary', '@-');
+  args.push(url);
+  const out = execFileSync('curl', args, {
+    input: body === undefined ? undefined : JSON.stringify(body),
+    maxBuffer: 256 * 1024 * 1024,
+  });
+  return JSON.parse(out.toString());
+}
+
 async function bridge(op, payload = {}) {
-  const res = await fetch(BRIDGE_URL, {
-    method: 'POST',
-    redirect: 'follow',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: BRIDGE_TOKEN, op, ...payload }),
-  });
-  const body = await res.json().catch(async () => {
-    throw new Error(`bridge ${op}: non-JSON response (HTTP ${res.status})`);
-  });
+  const body = curlJson(BRIDGE_URL, { token: BRIDGE_TOKEN, op, ...payload });
   if (!body.ok) throw new Error(`bridge ${op}: ${body.error}`);
   return body;
 }
 
 async function geminiImageModel() {
   if (process.env.GEMINI_IMAGE_MODEL) return clean(process.env.GEMINI_IMAGE_MODEL);
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
-  const { models = [] } = await res.json();
+  const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
   const candidates = models
     .map((m) => m.name.replace(/^models\//, ''))
     .filter((n) => n.includes('image') && !n.includes('imagen'));
@@ -98,18 +103,11 @@ async function geminiImageModel() {
 }
 
 async function generateLifestyle(model, prompt, imageBase64, mimeType) {
-  const res = await fetch(
+  const body = curlJson(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageBase64 } }] }],
-      }),
-    }
+    { contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageBase64 } }] }] }
   );
-  const body = await res.json();
-  if (!res.ok) throw new Error(`gemini HTTP ${res.status}: ${JSON.stringify(body).slice(0, 400)}`);
+  if (body.error) throw new Error(`gemini error: ${JSON.stringify(body.error).slice(0, 400)}`);
   const parts = body?.candidates?.[0]?.content?.parts || [];
   const img = parts.find((p) => p.inlineData?.data);
   if (!img) throw new Error(`gemini returned no image: ${JSON.stringify(body).slice(0, 400)}`);
@@ -278,8 +276,13 @@ async function publish({ commit }) {
     const slideNum = String(slides.length + 1).padStart(3, '0');
     const newAsset = path.join(assetDir, `slide_${slideNum}`);
     const newImages = path.join(REPO, 'public/images', category.dir, `slide_${slideNum}`);
-    if (fs.existsSync(newAsset) || fs.existsSync(newImages)) {
-      console.log(`publish: SKIP ${style}: slide_${slideNum} already exists`); continue;
+    const resuming = fs.existsSync(newAsset) && fs.existsSync(newImages)
+      && fs.existsSync(path.join(newAsset, 'data.json'))
+      && fs.existsSync(path.join(newImages, 'lifestyle.png'));
+    if (resuming) {
+      console.log(`publish: resuming previously staged ${style} -> ${category.dir}/slide_${slideNum}`);
+      published.push({ style, dir: category.dir, slide: slideNum, boardRow: r + 1 });
+      continue;
     }
 
     console.log(`publish: ${style} -> ${category.dir}/slide_${slideNum}`);
@@ -310,6 +313,9 @@ async function publish({ commit }) {
   if (!published.length) { console.log('publish: nothing approved and unpublished'); return; }
 
   if (commit) {
+    console.log('publish: verifying (tsc + build) before push...');
+    execSync('bunx tsc --noEmit -p tsconfig.app.json', { cwd: REPO, stdio: 'inherit' });
+    execSync('bun run build', { cwd: REPO, stdio: 'inherit' });
     const names = published.map((p) => p.style).join(', ');
     execSync('git add src/assets public/images', { cwd: REPO, stdio: 'inherit' });
     execSync(`git -c user.name=Claude -c user.email=noreply@anthropic.com commit -m "Add ${published.length} approved design(s): ${names}"`,
