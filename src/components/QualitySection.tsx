@@ -80,15 +80,9 @@ export const QualitySection = () => {
               Clear quality checks and control measures from sampling to dispatch.
             </p>
             <p className="text-lg text-muted-foreground leading-relaxed font-light text-center">
-              Every order moves through the same disciplined path. Yarns and raw
-              materials are checked at intake, weaving and stitching are inspected
-              on the floor while production runs, and each finished piece is
-              measured against the approved sample before it is packed.
-            </p>
-            <p className="text-lg text-muted-foreground leading-relaxed font-light text-center">
-              The same standards apply to every order, first shipment or repeat
-              program — so the quality our buyers approve is the quality that
-              arrives, container after container.
+              Materials are checked at intake, production is inspected on the
+              floor, and every finished piece is measured against the approved
+              sample — so the quality you approve is the quality that arrives.
             </p>
           </div>
         </div>
