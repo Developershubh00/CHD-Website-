@@ -455,18 +455,20 @@ async function intake() {
   }
 
   let processed = 0;
+  let attempted = 0; // NEW/REDO rows found, whether or not generation succeeded
   for (let r = 1; r < responses.length; r++) {
     const row = responses[r];
     const style = String(row[col.style] || '').trim();
     const categoryLabel = String(row[col.category] || '').trim();
     const category = CATEGORIES[categoryLabel.toLowerCase()];
     if (!style || !category) {
-      if (style) console.log(`intake: SKIP ${style}: unknown category "${categoryLabel}"`);
+      if (style) { attempted++; console.log(`intake: SKIP ${style}: unknown category "${categoryLabel}"`); }
       continue;
     }
     const existing = boardStyles.get(style.toUpperCase());
     const isRedo = existing && existing.status === 'REDO';
     if (existing && !isRedo) continue; // already on the board, not a redo
+    attempted++;
 
     const frontId = driveIdFromCell(row[col.front]);
     if (!frontId) { console.log(`intake: SKIP ${style}: no front image link`); continue; }
@@ -516,6 +518,37 @@ async function intake() {
     processed++;
   }
   console.log(`intake: done, ${processed} design(s) sent for review`);
+  if (attempted === 0) console.log('intake: NO NEW DESIGNS');
+
+  // Email the team the outcome (bridge notify). Older bridge deployments
+  // don't have the op yet - degrade to a log line, never fail the run.
+  const boardUrl = `https://docs.google.com/spreadsheets/d/${REVIEW_BOARD}`;
+  try {
+    if (processed > 0) {
+      await bridge('notify', {
+        subject: `CHD designs: ${processed} lifestyle image(s) ready for review`,
+        body:
+          `Hello team,\n\n${processed} design(s) now have generated lifestyle images waiting on the review board:\n` +
+          `${boardUrl}\n\n` +
+          `Please review before 1:00 PM: set STATUS to APPROVED to publish in the 1:30 PM run, ` +
+          `or REDO with remarks to regenerate tonight. The Remarks column shows each image's ` +
+          `automatic quality check as [auto-check N/10].\n\n- CHD design pipeline (automated)`,
+      });
+      console.log('intake: team notified by email');
+    } else if (attempted === 0) {
+      await bridge('notify', {
+        subject: 'CHD designs: no new designs received today',
+        body:
+          `Hello team,\n\nThe design pipeline ran but found no new submissions, so there is nothing ` +
+          `to review and nothing will be published in the next 1:30 PM run.\n\n` +
+          `Please upload new designs through the Google Form - they are picked up automatically ` +
+          `at the next check.\n\n- CHD design pipeline (automated)`,
+      });
+      console.log('intake: team notified by email (no submissions)');
+    }
+  } catch (e) {
+    console.log(`intake: team notification skipped (${String(e.message).slice(0, 120)}) - redeploy the bridge script to enable emails`);
+  }
 }
 
 // ---------------------------------------------------------------------------

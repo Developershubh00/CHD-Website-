@@ -10,6 +10,12 @@ var ALLOWED_SHEETS = [
   '13C3pdkyFbPAauTS03IRIt-yQ44oLzQ_ViuPf2z6khWw', // CHD Design Intake - Responses
   '1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is'  // CHD Lifestyle Review Board
 ];
+// The ONLY addresses the notify op may email - the pipeline cannot email
+// anyone outside this list no matter what it sends.
+var NOTIFY_RECIPIENTS = [
+  'info.designing@creativehomedecorllp.com', // design team
+  'vikram@creativehomedecorllp.com'          // owner
+];
 
 function setup() {
   var props = PropertiesService.getScriptProperties();
@@ -88,6 +94,16 @@ function doPost(e) {
         if (!sh3) return out({ ok: false, error: 'tab not found' });
         sh3.getRange(req.range).setValues(req.values);
         return out({ ok: true });
+      }
+
+      case 'notify': { // {subject, body, to?: subset of NOTIFY_RECIPIENTS}
+        var to = (req.to && req.to.length ? req.to : NOTIFY_RECIPIENTS)
+          .filter(function (a) { return NOTIFY_RECIPIENTS.indexOf(a) >= 0; });
+        if (!to.length) return out({ ok: false, error: 'no allowed recipients' });
+        MailApp.sendEmail(to.join(','),
+          String(req.subject || '').slice(0, 200),
+          String(req.body || '').slice(0, 5000));
+        return out({ ok: true, sent: to });
       }
 
       default:

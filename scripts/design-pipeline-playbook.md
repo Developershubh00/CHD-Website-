@@ -24,6 +24,25 @@ need the full repository — only the scripts folder.
 3. `bun install` then `bun scripts/design-pipeline.mjs intake`
 4. If a generation fails, retry once; report persistent failures with the
    style number and verbatim error.
+5. The script emails the team the outcome itself (images ready / nothing
+   submitted). If it logs "team notification skipped", mention that in
+   your report - the bridge deployment is outdated.
+6. **If the script prints `intake: NO NEW DESIGNS`** and your instructions
+   do NOT say you are the 11:00 AM recheck: schedule a one-off recheck for
+   11:00 AM IST the next day so late uploads still make that day's
+   1:30 PM publish. Use the claude-code-remote `create_trigger` tool:
+   - name: `CHD intake recheck (one-off)`
+   - run_once_at: next day at `05:30:00Z` (= 11:00 AM IST)
+   - create_new_session_on_fire: true
+   - notifications: `{"push": true, "email": true}`
+   - prompt: `Follow ONLY the "Intake run" section of
+     scripts/design-pipeline-playbook.md in the GitHub repo
+     Developershubh00/CHD-Website- (branch main). You are the one-off
+     11:00 AM IST recheck: do NOT schedule another recheck, whatever the
+     result.`
+   Include the trigger id in your final report. If you ARE the recheck,
+   never schedule another one - the nightly 9:00 PM run continues on its
+   own schedule regardless.
 
 ## Publish run (1:30 PM IST)
 
