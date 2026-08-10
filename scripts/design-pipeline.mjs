@@ -227,6 +227,12 @@ async function intake() {
     });
 
     if (isRedo) {
+      // refresh the category too - the submitter may have corrected it in the
+      // responses sheet, and publish reads the category from the board row
+      await bridge('update', {
+        sheetId: REVIEW_BOARD, range: `C${existing.row}`,
+        values: [[categoryLabel]],
+      });
       await bridge('update', {
         sheetId: REVIEW_BOARD, range: `E${existing.row}:H${existing.row}`,
         values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'}`]],
