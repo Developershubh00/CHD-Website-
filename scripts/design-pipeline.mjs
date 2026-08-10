@@ -54,14 +54,95 @@ const CATEGORIES = {
   'tote bags':     { dir: 'totebag',     scene: 'a lifestyle setting such as a bench, table or outdoor scene with the tote upright' },
 };
 
+// ---------------------------------------------------------------------------
+// Scale guidance. Image models cannot reason from raw measurements, but they
+// reliably follow RELATIONAL constraints against familiar reference objects
+// (sofa ~84in, bathtub ~60in, dinner plate ~11in, dining table ~72in). Parse
+// the submitted size, classify it, and emit hard relational rules.
+// ---------------------------------------------------------------------------
+function parseInches(sizeStr) {
+  const m = String(sizeStr).toUpperCase().match(/(\d+(?:\.\d+)?)\s*X\s*(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  const a = parseFloat(m[1]), b = parseFloat(m[2]);
+  return a <= b ? [a, b] : [b, a]; // [short edge, long edge]
+}
+
+function sizeGuidance(categoryLabel, sizeStr) {
+  const cat = categoryLabel.toLowerCase();
+  const dims = parseInches(sizeStr);
+  const named = String(sizeStr).trim().toUpperCase();
+  const base = (w, l, what) =>
+    `CRITICAL SCALE RULES: this ${what} measures ${w} by ${l} inches ` +
+    `(${(w / 12).toFixed(1)} by ${(l / 12).toFixed(1)} feet). `;
+  const tail = ' Render the product at EXACTLY this scale relative to every reference object in the scene; do not enlarge it to fill the space, and preserve its true width-to-length proportions. Never render any text, numbers, labels or measurements anywhere in the image.';
+
+  switch (cat) {
+    case 'rugs': {
+      if (!dims) return '';
+      const [w, l] = dims, lf = l / 12;
+      let rules;
+      if (lf <= 4.2) rules =
+        'This is a SMALL ACCENT RUG. The scene must contain NO sofa - compose a cozy corner with ONE armchair (about 30 inches wide) and nothing larger. The rug lies flat on the floor in front of the armchair, and its long edge is only about 1.5 times the width of that armchair. Most of the floor stays bare wood. NO furniture stands on the rug.';
+      else if (lf <= 6.5) rules =
+        'This is a SMALL-TO-MEDIUM rug. The scene may contain one armchair and a small coffee table, NO sofa. The rug is about twice as long as the armchair is wide; at most the coffee table touches it. Plenty of bare floor remains visible around the rug.';
+      else if (lf <= 9) rules =
+        'This is a MEDIUM area rug. The front legs of a sofa may rest on it; it covers the seating area but stays well clear of the walls.';
+      else rules =
+        'This is a LARGE area rug. Most of the seating arrangement sits on it.';
+      return base(w, l, 'rug') + rules + tail;
+    }
+    case 'bath mats': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'bath mat') +
+        `A standard bathtub is 60 inches long, so this mat's long edge is about ${Math.round((l / 60) * 100)}% of the tub's length. It occupies a small area of bathroom floor directly beside the tub or shower.` + tail;
+    }
+    case 'placemats': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'placemat') +
+        'A dinner plate is 11 inches across and covers most of the placemat, leaving only a border visible. One placemat serves ONE seat; it is far smaller than the table.' + tail;
+    }
+    case 'table runners': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'table runner') +
+        `It is a narrow strip about ${w} inches wide running down the centre of the table, covering roughly the middle third of the table's width, with table surface visible on both sides.` + tail;
+    }
+    case 'cushions': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'cushion') +
+        `A sofa seat cushion is about 24 inches wide, so this cushion is ${l <= 14 ? 'a small accent cushion, clearly smaller than the seat cushion behind it' : l <= 20 ? 'a standard throw cushion, a bit smaller than the seat cushion behind it' : 'a large floor-style cushion, about as wide as a seat cushion'}.` + tail;
+    }
+    case 'throws': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'throw') +
+        `A 3-seat sofa is about 84 inches long, so draped along the seat this throw covers roughly ${Math.min(100, Math.round((l / 84) * 100))}% of its length - it drapes over PART of the sofa or bed, never covering it entirely.` + tail;
+    }
+    case 'bedding':
+      return ` CRITICAL SCALE RULES: this is ${named} size bedding - show it on a correctly proportioned ${/KING|QUEEN|FULL|TWIN/.test(named) ? named.match(/KING|QUEEN|FULL|TWIN/)[0] : ''} bed, fitting the mattress exactly with a natural drape at the sides.` + tail;
+    case 'tote bags': {
+      if (!dims) return '';
+      const [w, l] = dims;
+      return base(w, l, 'tote bag') +
+        'Compared to a person, its top edge would reach about hip height when carried by the handles at arm\'s length. Show it at that human scale against the furniture around it.' + tail;
+    }
+    default:
+      return '';
+  }
+}
+
 const OWNER_PROMPT = (category, size, notes) =>
   'turn this product image to lifestyle image of the product and keep the design accuracy to 100% ' +
   'and the product should be the highlight of the created image. keep the theme of image based on the ' +
   'product and the product colour palette. also when generating make sure to follow on size of the ' +
   'product the image needs to take into account the size of the product and fit in proportion to the ' +
-  `size of the product in the lifestyle image. Product: ${category}, actual size ${size} - scale it ` +
-  'correctly against the furniture and room in the scene. Suggested setting: ' +
-  CATEGORIES[category.toLowerCase()].scene + '.' +
+  `size of the product in the lifestyle image. Product: ${category}, actual size ${size}. ` +
+  (sizeGuidance(category, size).includes('scene m') ? '' :
+    'Suggested setting: ' + CATEGORIES[category.toLowerCase()].scene + '. ') +
+  sizeGuidance(category, size) +
   (notes ? ' Additional instructions from the designer: ' + notes : '');
 
 // ---------------------------------------------------------------------------
