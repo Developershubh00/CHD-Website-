@@ -204,16 +204,52 @@ async function geminiImageModel() {
   return candidates[0];
 }
 
+const FRAMING_RULES =
+  ' FRAMING RULES: compose the scene for a SQUARE 1:1 frame and fill it completely edge to edge -' +
+  ' no letterboxing, no bars, no borders. The ENTIRE product must be fully visible inside the frame' +
+  ' with clear margin on every side; when something must be cut off by the frame edge, crop' +
+  ' background, floor or furniture - NEVER any part of the product.';
+
 async function generateLifestyle(model, prompt, imageBase64, mimeType) {
-  const body = curlJson(
+  const request = {
+    contents: [{ parts: [{ text: prompt + FRAMING_RULES }, { inlineData: { mimeType, data: imageBase64 } }] }],
+    generationConfig: { imageConfig: { aspectRatio: '1:1' } },
+  };
+  let body = curlJson(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    { contents: [{ parts: [{ text: prompt }, { inlineData: { mimeType, data: imageBase64 } }] }] }
+    request
   );
+  if (body.error && /imageConfig|aspectRatio|Unknown name/i.test(JSON.stringify(body.error))) {
+    // older API surface without imageConfig - retry without it
+    delete request.generationConfig;
+    body = curlJson(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+      request
+    );
+  }
   if (body.error) throw new Error(`gemini error: ${JSON.stringify(body.error).slice(0, 400)}`);
   const parts = body?.candidates?.[0]?.content?.parts || [];
   const img = parts.find((p) => p.inlineData?.data);
   if (!img) throw new Error(`gemini returned no image: ${JSON.stringify(body).slice(0, 400)}`);
-  return Buffer.from(img.inlineData.data, 'base64');
+  return squareCrop(Buffer.from(img.inlineData.data, 'base64'));
+}
+
+// Safety net: if the model still returns a non-square image, centre-crop to
+// 1:1 using sharp's attention strategy (crops toward the salient region, which
+// is the product). Skipped when the image is already square.
+async function squareCrop(buffer) {
+  try {
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(buffer).metadata();
+    if (Math.abs(meta.width - meta.height) / Math.max(meta.width, meta.height) <= 0.02) return buffer;
+    const side = Math.min(meta.width, meta.height);
+    return await sharp(buffer)
+      .resize(side, side, { fit: 'cover', position: 'attention' })
+      .png().toBuffer();
+  } catch (e) {
+    console.log(`squareCrop skipped (${e.message}) - uploading original`);
+    return buffer;
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ need the full repository — only the scripts folder.
    `git clone --depth 1 --filter=blob:none --sparse <url> chd && cd chd && git sparse-checkout set scripts`
 2. Confirm env vars: `CHD_BRIDGE_URL`, `CHD_BRIDGE_TOKEN`,
    `GEMINI_API_KEY`. Missing → STOP and report which.
-3. `bun scripts/design-pipeline.mjs intake`  (no bun install needed)
+3. `bun install` then `bun scripts/design-pipeline.mjs intake`
 4. If a generation fails, retry once; report persistent failures with the
    style number and verbatim error.
 
