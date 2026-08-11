@@ -438,7 +438,7 @@ async function compressPng(sharp, buffer) {
 // ---------------------------------------------------------------------------
 // intake: new submissions -> generated lifestyle -> review board
 // ---------------------------------------------------------------------------
-async function intake() {
+async function intake({ quietEmpty = false } = {}) {
   const model = await geminiImageModel();
   const textModel = geminiTextModel();
   console.log(`intake: image model ${model}, analysis model ${textModel}`);
@@ -535,7 +535,9 @@ async function intake() {
           `automatic quality check as [auto-check N/10].\n\n- CHD design pipeline (automated)`,
       });
       console.log('intake: team notified by email');
-    } else if (attempted === 0) {
+    } else if (attempted === 0 && !quietEmpty) {
+      // The nightly 9 PM run nags the team once; the 11 AM recheck passes
+      // --quiet-empty so an empty morning doesn't nag a second time.
       await bridge('notify', {
         subject: 'CHD designs: no new designs received today',
         body:
@@ -644,9 +646,9 @@ async function publish({ commit }) {
 // ---------------------------------------------------------------------------
 const cmd = process.argv[2];
 const flags = process.argv.slice(3);
-if (cmd === 'intake') await intake();
+if (cmd === 'intake') await intake({ quietEmpty: flags.includes('--quiet-empty') });
 else if (cmd === 'publish') await publish({ commit: flags.includes('--commit') });
 else {
-  console.log('usage: bun scripts/design-pipeline.mjs <intake|publish> [--commit]');
+  console.log('usage: bun scripts/design-pipeline.mjs <intake|publish> [--quiet-empty] [--commit]');
   process.exit(1);
 }
