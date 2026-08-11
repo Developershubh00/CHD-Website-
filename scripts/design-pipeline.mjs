@@ -303,17 +303,24 @@ async function generateLifestyle(model, prompt, imageBase64, mimeType) {
     contents: [{ parts: [{ text: prompt + FRAMING_RULES }, { inlineData: { mimeType, data: imageBase64 } }] }],
     generationConfig: { imageConfig: { aspectRatio: '1:1' } },
   };
-  let body = curlJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    request
-  );
-  if (body.error && /imageConfig|aspectRatio|Unknown name/i.test(JSON.stringify(body.error))) {
-    // older API surface without imageConfig - retry without it
-    delete request.generationConfig;
-    body = curlJson(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-      request
-    );
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+  let body;
+  // Transient 5xx/429s (model overloaded, deadline expired) are common at
+  // peak hours - retry with growing waits before treating them as fatal.
+  for (let attempt = 1; ; attempt++) {
+    body = curlJson(url, request);
+    if (body.error && /imageConfig|aspectRatio|Unknown name/i.test(JSON.stringify(body.error))) {
+      // older API surface without imageConfig - retry without it
+      delete request.generationConfig;
+      body = curlJson(url, request);
+    }
+    const transient = body.error && (
+      [429, 500, 503, 504].includes(body.error.code) ||
+      /UNAVAILABLE|Deadline|overloaded|RESOURCE_EXHAUSTED|INTERNAL/i.test(JSON.stringify(body.error)));
+    if (!transient || attempt >= 4) break;
+    const waitSec = attempt * 25;
+    console.log(`  gemini busy (${body.error.code}), waiting ${waitSec}s then retrying (${attempt}/4)...`);
+    await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
   }
   if (body.error) throw new Error(`gemini error: ${JSON.stringify(body.error).slice(0, 400)}`);
   const parts = body?.candidates?.[0]?.content?.parts || [];
@@ -456,6 +463,7 @@ async function intake({ quietEmpty = false } = {}) {
 
   let processed = 0;
   let attempted = 0; // NEW/REDO rows found, whether or not generation succeeded
+  const failures = []; // styles whose generation/upload failed this run
   for (let r = 1; r < responses.length; r++) {
     const row = responses[r];
     const style = String(row[col.style] || '').trim();
@@ -474,53 +482,62 @@ async function intake({ quietEmpty = false } = {}) {
     if (!frontId) { console.log(`intake: SKIP ${style}: no front image link`); continue; }
 
     console.log(`intake: ${isRedo ? 'REDO' : 'NEW'} ${style} (${categoryLabel})`);
-    const front = await bridge('download', { fileId: frontId });
+    // One design's failure must never sink the rest of the run - isolate it,
+    // record it, and keep going. Failed styles stay pending on the responses
+    // sheet, so the next scheduled run retries them automatically.
+    try {
+      const front = await bridge('download', { fileId: frontId });
 
-    const redoNotes = isRedo ? String(board[existing.row - 1][7] || '').trim() : '';
-    const designerNotes = String(row[col.notes] || '').trim();
-    const prompt = OWNER_PROMPT(categoryLabel, String(row[col.size] || '').trim(),
-      [designerNotes, redoNotes].filter(Boolean).join('. '));
+      const redoNotes = isRedo ? String(board[existing.row - 1][7] || '').trim() : '';
+      const designerNotes = String(row[col.notes] || '').trim();
+      const prompt = OWNER_PROMPT(categoryLabel, String(row[col.size] || '').trim(),
+        [designerNotes, redoNotes].filter(Boolean).join('. '));
 
-    const dims = parseInches(String(row[col.size] || ''));
-    const result = await generateVerified(model, textModel, prompt, front, dims, style);
-    const lifestyle = result.buf;
-    const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`;
+      const dims = parseInches(String(row[col.size] || ''));
+      const result = await generateVerified(model, textModel, prompt, front, dims, style);
+      const lifestyle = result.buf;
+      const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`;
 
-    const suffix = isRedo ? `-v${Date.now() % 1000}` : '';
-    const up = await bridge('upload', {
-      folderId: REVIEW_FOLDER, name: `${style}-lifestyle${suffix}.png`,
-      mimeType: 'image/png', base64: lifestyle.toString('base64'),
-    });
-    const upFront = await bridge('upload', {
-      folderId: REVIEW_FOLDER, name: `${style}-front${suffix}.png`,
-      mimeType: front.mimeType, base64: front.base64,
-    });
-
-    if (isRedo) {
-      // refresh the category too - the submitter may have corrected it in the
-      // responses sheet, and publish reads the category from the board row
-      await bridge('update', {
-        sheetId: REVIEW_BOARD, range: `C${existing.row}`,
-        values: [[categoryLabel]],
+      const suffix = isRedo ? `-v${Date.now() % 1000}` : '';
+      const up = await bridge('upload', {
+        folderId: REVIEW_FOLDER, name: `${style}-lifestyle${suffix}.png`,
+        mimeType: 'image/png', base64: lifestyle.toString('base64'),
       });
-      // Clear the Published stamp (col I) as well: a REDO on an already-live
-      // design must go through publish again after re-approval, where it
-      // updates the existing product slide in place.
-      await bridge('update', {
-        sheetId: REVIEW_BOARD, range: `E${existing.row}:I${existing.row}`,
-        values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`, '']],
+      const upFront = await bridge('upload', {
+        folderId: REVIEW_FOLDER, name: `${style}-front${suffix}.png`,
+        mimeType: front.mimeType, base64: front.base64,
       });
-    } else {
-      await bridge('append', {
-        sheetId: REVIEW_BOARD,
-        rows: [[new Date().toISOString().slice(0, 10), style, categoryLabel,
-                String(row[col.name] || row[col.email] || '').trim(),
-                upFront.url, up.url, '', qcNote, '']],
-      });
+
+      if (isRedo) {
+        // refresh the category too - the submitter may have corrected it in the
+        // responses sheet, and publish reads the category from the board row
+        await bridge('update', {
+          sheetId: REVIEW_BOARD, range: `C${existing.row}`,
+          values: [[categoryLabel]],
+        });
+        // Clear the Published stamp (col I) as well: a REDO on an already-live
+        // design must go through publish again after re-approval, where it
+        // updates the existing product slide in place.
+        await bridge('update', {
+          sheetId: REVIEW_BOARD, range: `E${existing.row}:I${existing.row}`,
+          values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`, '']],
+        });
+      } else {
+        await bridge('append', {
+          sheetId: REVIEW_BOARD,
+          rows: [[new Date().toISOString().slice(0, 10), style, categoryLabel,
+                  String(row[col.name] || row[col.email] || '').trim(),
+                  upFront.url, up.url, '', qcNote, '']],
+        });
+      }
+      processed++;
+    } catch (e) {
+      console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
+      failures.push(style);
     }
-    processed++;
   }
   console.log(`intake: done, ${processed} design(s) sent for review`);
+  if (failures.length) console.log(`intake: FAILED (will retry next run): ${failures.join(', ')}`);
   if (attempted === 0) console.log('intake: NO NEW DESIGNS');
 
   // Email the team the outcome (bridge notify). Older bridge deployments
@@ -535,7 +552,11 @@ async function intake({ quietEmpty = false } = {}) {
           `${boardUrl}\n\n` +
           `Please review before 1:00 PM: set STATUS to APPROVED to publish in the 1:30 PM run, ` +
           `or REDO with remarks to regenerate tonight. The Remarks column shows each image's ` +
-          `automatic quality check as [auto-check N/10].\n\n- CHD design pipeline (automated)`,
+          `automatic quality check as [auto-check N/10].` +
+          (failures.length
+            ? `\n\nNote: ${failures.length} design(s) hit a temporary image-service error this run and will be retried automatically at the next check: ${failures.join(', ')}.`
+            : '') +
+          `\n\n- CHD design pipeline (automated)`,
       });
       console.log('intake: team notified by email');
     } else if (attempted === 0 && !quietEmpty) {
