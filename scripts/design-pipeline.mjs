@@ -503,9 +503,12 @@ async function intake({ quietEmpty = false } = {}) {
         sheetId: REVIEW_BOARD, range: `C${existing.row}`,
         values: [[categoryLabel]],
       });
+      // Clear the Published stamp (col I) as well: a REDO on an already-live
+      // design must go through publish again after re-approval, where it
+      // updates the existing product slide in place.
       await bridge('update', {
-        sheetId: REVIEW_BOARD, range: `E${existing.row}:H${existing.row}`,
-        values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`]],
+        sheetId: REVIEW_BOARD, range: `E${existing.row}:I${existing.row}`,
+        values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`, '']],
       });
     } else {
       await bridge('append', {
@@ -556,6 +559,30 @@ async function intake({ quietEmpty = false } = {}) {
 // ---------------------------------------------------------------------------
 // publish: APPROVED board rows -> repo product folders -> push
 // ---------------------------------------------------------------------------
+
+// A style that is already on the site (REDO after publish) must be updated
+// in place, never duplicated as a new slide. Search every category folder -
+// the category may have been corrected after the original publish.
+function findExistingSlide(style) {
+  const assetsRoot = path.join(REPO, 'src/assets');
+  for (const catDir of fs.readdirSync(assetsRoot)) {
+    const dirPath = path.join(assetsRoot, catDir);
+    if (!fs.statSync(dirPath).isDirectory()) continue;
+    for (const slide of fs.readdirSync(dirPath)) {
+      if (!/^slide_\d+$/.test(slide)) continue;
+      const dataPath = path.join(dirPath, slide, 'data.json');
+      if (!fs.existsSync(dataPath)) continue;
+      try {
+        const meta = JSON.parse(fs.readFileSync(dataPath, 'utf8'));
+        if (String(meta.styleNumber || '').trim().toUpperCase() === style.toUpperCase()) {
+          return { dir: catDir, slide: slide.replace('slide_', '') };
+        }
+      } catch { /* unreadable data.json - not a match */ }
+    }
+  }
+  return null;
+}
+
 async function publish({ commit }) {
   const sharp = (await import('sharp')).default;
   const { values: board } = await bridge('read', { sheetId: REVIEW_BOARD });
@@ -575,22 +602,31 @@ async function publish({ commit }) {
       String(row[col.style] || '').trim().toUpperCase() === style.toUpperCase());
     if (!submission) { console.log(`publish: SKIP ${style}: no matching form submission`); continue; }
 
-    // next slide number = current folder count + 1 (site derives counts the same way)
-    const assetDir = path.join(REPO, 'src/assets', category.dir);
-    const slides = fs.readdirSync(assetDir).filter((d) => /^slide_\d+$/.test(d));
-    const slideNum = String(slides.length + 1).padStart(3, '0');
-    const newAsset = path.join(assetDir, `slide_${slideNum}`);
-    const newImages = path.join(REPO, 'public/images', category.dir, `slide_${slideNum}`);
-    const resuming = fs.existsSync(newAsset) && fs.existsSync(newImages)
+    const existing = findExistingSlide(style);
+    let slideDir, slideNum;
+    if (existing) {
+      // republish: overwrite the live slide in place
+      slideDir = existing.dir;
+      slideNum = existing.slide;
+      console.log(`publish: ${style} already live -> updating ${slideDir}/slide_${slideNum} in place`);
+    } else {
+      // next slide number = current folder count + 1 (site derives counts the same way)
+      slideDir = category.dir;
+      const assetDir = path.join(REPO, 'src/assets', slideDir);
+      const slides = fs.readdirSync(assetDir).filter((d) => /^slide_\d+$/.test(d));
+      slideNum = String(slides.length + 1).padStart(3, '0');
+      console.log(`publish: ${style} -> ${slideDir}/slide_${slideNum}`);
+    }
+    const newAsset = path.join(REPO, 'src/assets', slideDir, `slide_${slideNum}`);
+    const newImages = path.join(REPO, 'public/images', slideDir, `slide_${slideNum}`);
+    const resuming = !existing && fs.existsSync(newAsset) && fs.existsSync(newImages)
       && fs.existsSync(path.join(newAsset, 'data.json'))
       && fs.existsSync(path.join(newImages, 'lifestyle.png'));
     if (resuming) {
-      console.log(`publish: resuming previously staged ${style} -> ${category.dir}/slide_${slideNum}`);
-      published.push({ style, dir: category.dir, slide: slideNum, boardRow: r + 1 });
+      console.log(`publish: resuming previously staged ${style} -> ${slideDir}/slide_${slideNum}`);
+      published.push({ style, dir: slideDir, slide: slideNum, boardRow: r + 1 });
       continue;
     }
-
-    console.log(`publish: ${style} -> ${category.dir}/slide_${slideNum}`);
     const lifestyle = await bridge('download', { fileId: driveIdFromCell(lifestyleUrl) });
     const front = await bridge('download', { fileId: driveIdFromCell(submission[col.front]) });
     const closeId = driveIdFromCell(submission[col.closeup]);
@@ -617,7 +653,7 @@ async function publish({ commit }) {
     fs.writeFileSync(path.join(newImages, 'image_01.png'), await toPng(front.base64));
     if (close) fs.writeFileSync(path.join(newImages, 'image_02.png'), await toPng(close.base64));
 
-    published.push({ style, dir: category.dir, slide: slideNum, boardRow: r + 1 });
+    published.push({ style, dir: slideDir, slide: slideNum, boardRow: r + 1 });
   }
 
   if (!published.length) { console.log('publish: nothing approved and unpublished'); return; }

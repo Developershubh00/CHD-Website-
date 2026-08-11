@@ -62,6 +62,9 @@ fresh session, because scheduled fresh sessions cannot reliably push.
 ## Rules for both runs
 
 - Never publish a design whose board STATUS is not exactly APPROVED.
+- A REDO on an already-published design clears its Published stamp; when
+  re-approved, the publish run updates the existing product slide in
+  place — it never creates a duplicate.
 - Never edit pipeline scripts, website code, or other products' files.
 - The review board is the single source of truth:
   https://docs.google.com/spreadsheets/d/1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is
