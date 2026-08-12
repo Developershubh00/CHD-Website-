@@ -560,12 +560,23 @@ async function intake({ quietEmpty = false } = {}) {
           values: [[upFront.url, up.url, '', `regenerated with: ${redoNotes || '(no notes)'} ${qcNote}`, '']],
         });
       } else {
-        await bridge('append', {
-          sheetId: REVIEW_BOARD,
-          rows: [[new Date().toISOString().slice(0, 10), style, categoryLabel,
-                  String(row[col.name] || row[col.email] || '').trim(),
-                  upFront.url, up.url, '', qcNote, '']],
-        });
+        // Appends are the one non-idempotent bridge op: when Apps Script
+        // executes the write but the response gets lost in a flaky redirect,
+        // the caller counts it as failed and a later run appends again.
+        // Re-check the style column immediately before appending.
+        const fresh = await bridge('read', { sheetId: REVIEW_BOARD, range: 'B:B' });
+        const alreadyThere = (fresh.values || []).some(
+          (v) => String(v[0] || '').trim().toUpperCase() === style.toUpperCase());
+        if (alreadyThere) {
+          console.log(`  ${style}: already on the board (recovered earlier append) - not appending again`);
+        } else {
+          await bridge('append', {
+            sheetId: REVIEW_BOARD,
+            rows: [[new Date().toISOString().slice(0, 10), style, categoryLabel,
+                    String(row[col.name] || row[col.email] || '').trim(),
+                    upFront.url, up.url, '', qcNote, '']],
+          });
+        }
       }
       processed++;
       // Guard against duplicate form entries for the same style within one
@@ -578,7 +589,11 @@ async function intake({ quietEmpty = false } = {}) {
     }
   }
   console.log(`intake: done, ${processed} design(s) sent for review`);
-  if (failures.length) console.log(`intake: FAILED (will retry next run): ${failures.join(', ')}`);
+  // A style can fail on an old broken form row and still succeed via the
+  // designer's newer resubmission later in the same run - only report
+  // styles that truly did not make it onto the board.
+  const realFailures = failures.filter((s) => !boardStyles.has(s.toUpperCase()));
+  if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.join(', ')}`);
   if (attempted === 0) console.log('intake: NO NEW DESIGNS');
 
   // Email the team the outcome (bridge notify). Older bridge deployments
@@ -594,8 +609,8 @@ async function intake({ quietEmpty = false } = {}) {
           `Please review before 1:00 PM: set STATUS to APPROVED to publish in the 1:30 PM run, ` +
           `or REDO with remarks to regenerate tonight. The Remarks column shows each image's ` +
           `automatic quality check as [auto-check N/10].` +
-          (failures.length
-            ? `\n\nNote: ${failures.length} design(s) hit a temporary image-service error this run and will be retried automatically at the next check: ${failures.join(', ')}.`
+          (realFailures.length
+            ? `\n\nNote: ${realFailures.length} design(s) hit an error this run and will be retried automatically at the next check: ${realFailures.join(', ')}.`
             : '') +
           `\n\n- CHD design pipeline (automated)`,
       });
