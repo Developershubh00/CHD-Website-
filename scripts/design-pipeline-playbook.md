@@ -68,6 +68,10 @@ fresh session, because scheduled fresh sessions cannot reliably push.
 - A REDO on an already-published design clears its Published stamp; when
   re-approved, the publish run updates the existing product slide in
   place — it never creates a duplicate.
+- Standing rule: anything a submission fails on that the TEAM must fix
+  (unsupported format, oversized file, missing image) is emailed to them
+  automatically by the script with plain-language instructions — never
+  rely on run reports alone to tell the team.
 - Never edit pipeline scripts, website code, or other products' files.
 - The review board is the single source of truth:
   https://docs.google.com/spreadsheets/d/1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is

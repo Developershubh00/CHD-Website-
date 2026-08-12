@@ -502,7 +502,11 @@ async function intake({ quietEmpty = false } = {}) {
     attempted++;
 
     const frontId = driveIdFromCell(row[col.front]);
-    if (!frontId) { console.log(`intake: SKIP ${style}: no front image link`); continue; }
+    if (!frontId) {
+      console.log(`intake: SKIP ${style}: no front image link`);
+      failures.push({ style, error: 'no front image attached' });
+      continue;
+    }
 
     console.log(`intake: ${isRedo ? 'REDO' : 'NEW'} ${style} (${categoryLabel})`);
     // One design's failure must never sink the rest of the run - isolate it,
@@ -585,15 +589,34 @@ async function intake({ quietEmpty = false } = {}) {
       boardStyles.set(style.toUpperCase(), { row: -1, status: '' });
     } catch (e) {
       console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
-      failures.push(style);
+      failures.push({ style, error: String(e.message).slice(0, 200) });
     }
   }
   console.log(`intake: done, ${processed} design(s) sent for review`);
   // A style can fail on an old broken form row and still succeed via the
   // designer's newer resubmission later in the same run - only report
   // styles that truly did not make it onto the board.
-  const realFailures = failures.filter((s) => !boardStyles.has(s.toUpperCase()));
-  if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.join(', ')}`);
+  const realFailures = failures.filter((f) => !boardStyles.has(f.style.toUpperCase()));
+  if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.map((f) => f.style).join(', ')}`);
+
+  // Failures the TEAM must fix (bad format, oversized file, missing image)
+  // get their own plain-language email; system errors just retry silently.
+  const teamFixFor = (error) => {
+    if (/exceeds the maximum file size/i.test(error)) {
+      return 'the uploaded file is too large to process - re-export it as JPG or PNG (under ~15 MB) and submit a fresh form entry with the same style number';
+    }
+    if (/Unsupported MIME|not an image/i.test(error)) {
+      return 'the uploaded file format is not supported - export it as JPG or PNG and submit a fresh form entry with the same style number';
+    }
+    if (/no front image/i.test(error)) {
+      return 'the form entry has no front card image attached - submit a fresh entry with the image included';
+    }
+    return null; // transient/system error - retried automatically, nothing for the team to do
+  };
+  const actionable = realFailures
+    .map((f) => ({ ...f, fix: teamFixFor(f.error) }))
+    .filter((f) => f.fix);
+  const transient = realFailures.filter((f) => !teamFixFor(f.error));
   if (attempted === 0) console.log('intake: NO NEW DESIGNS');
 
   // Email the team the outcome (bridge notify). Older bridge deployments
@@ -609,8 +632,8 @@ async function intake({ quietEmpty = false } = {}) {
           `Please review before 1:00 PM: set STATUS to APPROVED to publish in the 1:30 PM run, ` +
           `or REDO with remarks to regenerate tonight. The Remarks column shows each image's ` +
           `automatic quality check as [auto-check N/10].` +
-          (realFailures.length
-            ? `\n\nNote: ${realFailures.length} design(s) hit an error this run and will be retried automatically at the next check: ${realFailures.join(', ')}.`
+          (transient.length
+            ? `\n\nNote: ${transient.length} design(s) hit a temporary error this run and will be retried automatically at the next check: ${transient.map((f) => f.style).join(', ')}.`
             : '') +
           `\n\n- CHD design pipeline (automated)`,
       });
@@ -627,6 +650,17 @@ async function intake({ quietEmpty = false } = {}) {
           `at the next check.\n\n- CHD design pipeline (automated)`,
       });
       console.log('intake: team notified by email (no submissions)');
+    }
+    if (actionable.length) {
+      await bridge('notify', {
+        subject: `CHD designs: action needed - ${actionable.length} submission(s) cannot be processed`,
+        body:
+          `Hello team,\n\nThe following submission(s) could not be processed and need a fix from your side ` +
+          `(the pipeline cannot repair these automatically):\n\n` +
+          actionable.map((f) => `- ${f.style}: ${f.fix}`).join('\n') +
+          `\n\nReminder: upload JPG or PNG only, under ~15 MB.\n\n- CHD design pipeline (automated)`,
+      });
+      console.log('intake: team notified by email (action needed)');
     }
   } catch (e) {
     console.log(`intake: team notification skipped (${String(e.message).slice(0, 120)}) - redeploy the bridge script to enable emails`);
