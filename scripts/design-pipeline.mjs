@@ -695,6 +695,22 @@ async function publish({ commit }) {
       });
     }
     console.log(`publish: pushed ${published.length} design(s) to main`);
+
+    // Rule: whenever designs go live, email the team exactly what was published.
+    try {
+      const pretty = (dir) => (Object.entries(CATEGORIES).find(([, v]) => v.dir === dir)?.[0] || dir);
+      await bridge('notify', {
+        subject: `CHD designs: ${published.length} design(s) now LIVE on the website`,
+        body:
+          `Hello team,\n\nThe following design(s) were just published to creativehomedecorllp.com:\n\n` +
+          published.map((p) => `- ${p.style} (${pretty(p.dir)})`).join('\n') +
+          `\n\nRe-approved designs replace their existing product images in place. ` +
+          `The site finishes rebuilding within a few minutes of this email.\n\n- CHD design pipeline (automated)`,
+      });
+      console.log('publish: team notified by email');
+    } catch (e) {
+      console.log(`publish: team notification skipped (${String(e.message).slice(0, 120)})`);
+    }
   } else {
     console.log(`publish: staged ${published.length} design(s) in the working tree (run with --commit to push)`);
   }

@@ -58,6 +58,9 @@ fresh session, because scheduled fresh sessions cannot reliably push.
      verbatim, do not work around them.
    - Previously staged slides from an interrupted run are resumed, not
      skipped.
+   - After a successful push the script emails the team the list of
+     styles that just went live (standing rule — the team is always told
+     what is on the website).
 
 ## Rules for both runs
 
