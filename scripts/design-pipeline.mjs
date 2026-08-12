@@ -185,6 +185,7 @@ function curlJson(url, body) {
   // instead of running the app (cold starts / transient Google errors), and
   // the proxy occasionally drops a connection. Neither means the request
   // was executed, so retrying is safe. 3 tries with growing waits.
+  const WAITS = [15, 30, 60, 120]; // flaky bursts can outlast a minute - ride them out
   for (let attempt = 1; ; attempt++) {
     let out;
     try {
@@ -193,19 +194,19 @@ function curlJson(url, body) {
         maxBuffer: 256 * 1024 * 1024,
       });
     } catch (e) {
-      if (attempt >= 3) throw e;
-      console.log(`  http request failed, retrying in ${attempt * 15}s (${attempt}/2)...`);
-      execFileSync('sleep', [String(attempt * 15)]);
+      if (attempt > WAITS.length) throw e;
+      console.log(`  http request failed, retrying in ${WAITS[attempt - 1]}s (${attempt}/${WAITS.length})...`);
+      execFileSync('sleep', [String(WAITS[attempt - 1])]);
       continue;
     }
     try {
       return JSON.parse(out.toString());
     } catch {
-      if (attempt >= 3) {
-        throw new Error(`non-JSON response from ${url.split('?')[0]} after 3 tries: ${out.toString().slice(0, 150)}`);
+      if (attempt > WAITS.length) {
+        throw new Error(`non-JSON response from ${url.split('?')[0]} after ${attempt} tries: ${out.toString().slice(0, 150)}`);
       }
-      console.log(`  got an HTML error page instead of JSON (transient), retrying in ${attempt * 15}s (${attempt}/2)...`);
-      execFileSync('sleep', [String(attempt * 15)]);
+      console.log(`  got an HTML error page instead of JSON (transient), retrying in ${WAITS[attempt - 1]}s (${attempt}/${WAITS.length})...`);
+      execFileSync('sleep', [String(WAITS[attempt - 1])]);
     }
   }
 }
