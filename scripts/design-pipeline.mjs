@@ -181,11 +181,33 @@ function curlJson(url, body) {
   const args = ['-sL', '--max-time', '600', '-H', 'Content-Type: application/json'];
   if (body !== undefined) args.push('--data-binary', '@-');
   args.push(url);
-  const out = execFileSync('curl', args, {
-    input: body === undefined ? undefined : JSON.stringify(body),
-    maxBuffer: 256 * 1024 * 1024,
-  });
-  return JSON.parse(out.toString());
+  // Apps Script exec URLs intermittently answer with an HTML 404 page
+  // instead of running the app (cold starts / transient Google errors), and
+  // the proxy occasionally drops a connection. Neither means the request
+  // was executed, so retrying is safe. 3 tries with growing waits.
+  for (let attempt = 1; ; attempt++) {
+    let out;
+    try {
+      out = execFileSync('curl', args, {
+        input: body === undefined ? undefined : JSON.stringify(body),
+        maxBuffer: 256 * 1024 * 1024,
+      });
+    } catch (e) {
+      if (attempt >= 3) throw e;
+      console.log(`  http request failed, retrying in ${attempt * 15}s (${attempt}/2)...`);
+      execFileSync('sleep', [String(attempt * 15)]);
+      continue;
+    }
+    try {
+      return JSON.parse(out.toString());
+    } catch {
+      if (attempt >= 3) {
+        throw new Error(`non-JSON response from ${url.split('?')[0]} after 3 tries: ${out.toString().slice(0, 150)}`);
+      }
+      console.log(`  got an HTML error page instead of JSON (transient), retrying in ${attempt * 15}s (${attempt}/2)...`);
+      execFileSync('sleep', [String(attempt * 15)]);
+    }
+  }
 }
 
 async function bridge(op, payload = {}) {
@@ -488,6 +510,20 @@ async function intake({ quietEmpty = false } = {}) {
     try {
       const front = await bridge('download', { fileId: frontId });
 
+      // Designers sometimes upload TIFF/BMP masters, which Gemini rejects.
+      // Convert anything outside Gemini's accepted set to PNG (capped at
+      // 3000px so the request payload stays sane).
+      const GEMINI_MIMES = ['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'];
+      if (!GEMINI_MIMES.includes(front.mimeType)) {
+        const sharp = (await import('sharp')).default;
+        const converted = await sharp(Buffer.from(front.base64, 'base64'))
+          .resize({ width: 3000, height: 3000, fit: 'inside', withoutEnlargement: true })
+          .png().toBuffer();
+        console.log(`  ${style}: converted ${front.mimeType} front image to PNG for generation`);
+        front.base64 = converted.toString('base64');
+        front.mimeType = 'image/png';
+      }
+
       const redoNotes = isRedo ? String(board[existing.row - 1][7] || '').trim() : '';
       const designerNotes = String(row[col.notes] || '').trim();
       const prompt = OWNER_PROMPT(categoryLabel, String(row[col.size] || '').trim(),
@@ -531,6 +567,10 @@ async function intake({ quietEmpty = false } = {}) {
         });
       }
       processed++;
+      // Guard against duplicate form entries for the same style within one
+      // run (e.g. a designer resubmitting after a broken upload): once a
+      // style lands on the board, later rows with the same style are skipped.
+      boardStyles.set(style.toUpperCase(), { row: -1, status: '' });
     } catch (e) {
       console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
       failures.push(style);
