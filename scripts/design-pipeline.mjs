@@ -465,6 +465,21 @@ async function compressPng(sharp, buffer) {
   return lossless.length < buffer.length ? lossless : buffer;
 }
 
+// Failures the TEAM must fix (bad format, oversized file, missing image)
+// get their own plain-language email; system errors just retry silently.
+function teamFixFor(error) {
+  if (/exceeds the maximum file size/i.test(error)) {
+    return 'the uploaded file is too large to process - re-export it as JPG or PNG (under ~15 MB) and submit a fresh form entry with the same style number';
+  }
+  if (/Unsupported MIME|not an image/i.test(error)) {
+    return 'the uploaded file format is not supported - export it as JPG or PNG and submit a fresh form entry with the same style number';
+  }
+  if (/no front image/i.test(error)) {
+    return 'the form entry has no front card image attached - submit a fresh entry with the image included';
+  }
+  return null; // transient/system error - retried automatically, nothing for the team to do
+}
+
 // ---------------------------------------------------------------------------
 // intake: new submissions -> generated lifestyle -> review board
 // ---------------------------------------------------------------------------
@@ -599,20 +614,6 @@ async function intake({ quietEmpty = false } = {}) {
   const realFailures = failures.filter((f) => !boardStyles.has(f.style.toUpperCase()));
   if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.map((f) => f.style).join(', ')}`);
 
-  // Failures the TEAM must fix (bad format, oversized file, missing image)
-  // get their own plain-language email; system errors just retry silently.
-  const teamFixFor = (error) => {
-    if (/exceeds the maximum file size/i.test(error)) {
-      return 'the uploaded file is too large to process - re-export it as JPG or PNG (under ~15 MB) and submit a fresh form entry with the same style number';
-    }
-    if (/Unsupported MIME|not an image/i.test(error)) {
-      return 'the uploaded file format is not supported - export it as JPG or PNG and submit a fresh form entry with the same style number';
-    }
-    if (/no front image/i.test(error)) {
-      return 'the form entry has no front card image attached - submit a fresh entry with the image included';
-    }
-    return null; // transient/system error - retried automatically, nothing for the team to do
-  };
   const actionable = realFailures
     .map((f) => ({ ...f, fix: teamFixFor(f.error) }))
     .filter((f) => f.fix);
@@ -701,6 +702,7 @@ async function publish({ commit }) {
   const col = indexHeaders(responses[0] || []);
 
   const published = [];
+  const pubFailures = [];
   for (let r = 1; r < board.length; r++) {
     const [, styleRaw, categoryLabel, , , lifestyleUrl, status, , publishedAt] = board[r];
     const style = String(styleRaw || '').trim();
@@ -709,10 +711,13 @@ async function publish({ commit }) {
     const category = CATEGORIES[String(categoryLabel).trim().toLowerCase()];
     if (!category) { console.log(`publish: SKIP ${style}: unknown category`); continue; }
 
-    const submission = responses.slice(1).find((row) =>
+    // Designers resubmit broken uploads under the same style number, so the
+    // NEWEST form row for a style is the authoritative one.
+    const submission = responses.slice(1).reverse().find((row) =>
       String(row[col.style] || '').trim().toUpperCase() === style.toUpperCase());
     if (!submission) { console.log(`publish: SKIP ${style}: no matching form submission`); continue; }
 
+    try {
     const existing = findExistingSlide(style);
     let slideDir, slideNum;
     if (existing) {
@@ -765,6 +770,31 @@ async function publish({ commit }) {
     if (close) fs.writeFileSync(path.join(newImages, 'image_02.png'), await toPng(close.base64));
 
     published.push({ style, dir: slideDir, slide: slideNum, boardRow: r + 1 });
+    } catch (e) {
+      // One design's failure must not sink the whole publish - record it,
+      // skip it, and keep going. It stays APPROVED+unstamped, so the next
+      // run retries it automatically.
+      console.log(`publish: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
+      pubFailures.push({ style, error: String(e.message).slice(0, 200) });
+    }
+  }
+  if (pubFailures.length) console.log(`publish: FAILED (will retry next run): ${pubFailures.map((f) => f.style).join(', ')}`);
+
+  // Team-fixable publish failures get the same "action needed" email intake sends.
+  const pubActionable = pubFailures.map((f) => ({ ...f, fix: teamFixFor(f.error) })).filter((f) => f.fix);
+  if (pubActionable.length) {
+    try {
+      await bridge('notify', {
+        subject: `CHD designs: action needed - ${pubActionable.length} approved design(s) could not be published`,
+        body:
+          `Hello team,\n\nThe following APPROVED design(s) could not be published and need a fix from your side:\n\n` +
+          pubActionable.map((f) => `- ${f.style}: ${f.fix}`).join('\n') +
+          `\n\nReminder: upload JPG or PNG only, under ~15 MB.\n\n- CHD design pipeline (automated)`,
+      });
+      console.log('publish: team notified by email (action needed)');
+    } catch (e) {
+      console.log(`publish: action-needed notification skipped (${String(e.message).slice(0, 120)})`);
+    }
   }
 
   if (!published.length) { console.log('publish: nothing approved and unpublished'); return; }
