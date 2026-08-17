@@ -89,10 +89,13 @@ function getProductImages(category: string, slideNumber: number, lifestylePng: b
     images.push(`/images/${category}/slide_${slideNum}/lifestyle.jpg`); // Will fallback to png via onError
   }
   
-  // Add image_01 and image_02 - always try jpg first (onError will fallback to png)
+  // Add image_01, optional back-side shot, then image_02 - always try jpg
+  // first (onError will fallback to png; products without a back image
+  // simply hide that slot via failedImageIndices)
   images.push(`/images/${category}/slide_${slideNum}/image_01.jpg`);
+  images.push(`/images/${category}/slide_${slideNum}/back.jpg`);
   images.push(`/images/${category}/slide_${slideNum}/image_02.jpg`);
-  
+
   // Note: table_01.png is excluded - not shown in thumbnails or detail page
   return images;
 }

@@ -431,6 +431,7 @@ function indexHeaders(headerRow) {
     season: find([/season/i]),
     notes: find([/notes/i]),
     front: find([/front/i]),
+    back: find([/back/i]),
     closeup: find([/close/i]),
     name: find([/your\s*n.?a.?me/i]),
   };
@@ -747,6 +748,19 @@ async function publish({ commit }) {
     const front = await bridge('download', { fileId: driveIdFromCell(submission[col.front]) });
     const closeId = driveIdFromCell(submission[col.closeup]);
     const close = closeId ? await bridge('download', { fileId: closeId }) : null;
+    // Optional back-side shot: shown on the product page as-is (never
+    // generated). A broken back upload must not block the product - publish
+    // without it and tell the team what to fix.
+    const backId = col.back >= 0 ? driveIdFromCell(submission[col.back]) : null;
+    let back = null;
+    if (backId) {
+      try {
+        back = await bridge('download', { fileId: backId });
+      } catch (e) {
+        console.log(`publish: ${style}: back image skipped (${String(e.message).slice(0, 120)})`);
+        pubFailures.push({ style, error: 'back-side image: ' + String(e.message).slice(0, 180) });
+      }
+    }
 
     fs.mkdirSync(newAsset, { recursive: true });
     fs.mkdirSync(newImages, { recursive: true });
@@ -767,6 +781,7 @@ async function publish({ commit }) {
       .png().toBuffer());
     fs.writeFileSync(path.join(newImages, 'lifestyle.png'), await toPng(lifestyle.base64));
     fs.writeFileSync(path.join(newImages, 'image_01.png'), await toPng(front.base64));
+    if (back) fs.writeFileSync(path.join(newImages, 'back.png'), await toPng(back.base64));
     if (close) fs.writeFileSync(path.join(newImages, 'image_02.png'), await toPng(close.base64));
 
     published.push({ style, dir: slideDir, slide: slideNum, boardRow: r + 1 });

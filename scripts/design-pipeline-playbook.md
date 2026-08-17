@@ -72,6 +72,11 @@ fresh session, because scheduled fresh sessions cannot reliably push.
   (unsupported format, oversized file, missing image) is emailed to them
   automatically by the script with plain-language instructions — never
   rely on run reports alone to tell the team.
+- The optional "Back side image" form upload is published AS-IS (never
+  generated, never reviewed): it lands as back.png in the product slide
+  and the site shows it right after the front image. A broken back
+  upload never blocks the product — it publishes without it and the
+  team is emailed what to fix.
 - Never edit pipeline scripts, website code, or other products' files.
 - The review board is the single source of truth:
   https://docs.google.com/spreadsheets/d/1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is
