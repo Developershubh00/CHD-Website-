@@ -820,8 +820,17 @@ async function publish({ commit }) {
     execSync('bun run build', { cwd: REPO, stdio: 'inherit' });
     const names = published.map((p) => p.style).join(', ');
     execSync('git add src/assets public/images', { cwd: REPO, stdio: 'inherit' });
-    execSync(`git -c user.name=Claude -c user.email=noreply@anthropic.com commit -m "Add ${published.length} approved design(s): ${names}"`,
-      { cwd: REPO, stdio: 'inherit' });
+    // A previous run may have committed these designs but failed to push (e.g.
+    // a GitHub outage or a lapsed credential). Re-staging then produces no
+    // changes, and `git commit` would abort the whole run - so commit only
+    // when something is actually staged, and always push whatever HEAD holds.
+    const staged = execSync('git diff --cached --name-only', { cwd: REPO }).toString().trim();
+    if (staged) {
+      execSync(`git -c user.name=Claude -c user.email=noreply@anthropic.com commit -m "Add ${published.length} approved design(s): ${names}"`,
+        { cwd: REPO, stdio: 'inherit' });
+    } else {
+      console.log('publish: designs already committed by an earlier run - pushing existing commit');
+    }
     execSync('git push origin HEAD:main', { cwd: REPO, stdio: 'inherit' });
     for (const p of published) {
       await bridge('update', {
