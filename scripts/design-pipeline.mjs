@@ -324,7 +324,9 @@ function verifyLifestyle(textModel, frontB64, frontMime, genB64, dims) {
 async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   const request = {
     contents: [{ parts: [{ text: prompt + FRAMING_RULES }, { inlineData: { mimeType, data: imageBase64 } }] }],
-    generationConfig: { imageConfig: { aspectRatio: '1:1' } },
+    // 2K native output: the team rejected 1024px renders as visibly soft next
+    // to ~2400px front cards on the same product page.
+    generationConfig: { imageConfig: { aspectRatio: '1:1', imageSize: '2K' } },
   };
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
   let body;
@@ -332,6 +334,11 @@ async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   // peak hours - retry with growing waits before treating them as fatal.
   for (let attempt = 1; ; attempt++) {
     body = curlJson(url, request);
+    if (body.error && /imageSize/i.test(JSON.stringify(body.error)) && request.generationConfig?.imageConfig?.imageSize) {
+      // API surface without imageSize - drop just that and retry
+      delete request.generationConfig.imageConfig.imageSize;
+      body = curlJson(url, request);
+    }
     if (body.error && /imageConfig|aspectRatio|Unknown name/i.test(JSON.stringify(body.error))) {
       // older API surface without imageConfig - retry without it
       delete request.generationConfig;
@@ -349,7 +356,7 @@ async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   const parts = body?.candidates?.[0]?.content?.parts || [];
   const img = parts.find((p) => p.inlineData?.data);
   if (!img) throw new Error(`gemini returned no image: ${JSON.stringify(body).slice(0, 400)}`);
-  return squareCrop(Buffer.from(img.inlineData.data, 'base64'));
+  return ensureMinSize(await squareCrop(Buffer.from(img.inlineData.data, 'base64')));
 }
 
 // Safety net: if the model still returns a non-square image, centre-crop to
@@ -366,6 +373,24 @@ async function squareCrop(buffer) {
       .png().toBuffer();
   } catch (e) {
     console.log(`squareCrop skipped (${e.message}) - uploading original`);
+    return buffer;
+  }
+}
+
+// Safety net for models that only return 1024px: upscale to 2048 with
+// Lanczos so the lifestyle image is not visibly softer than the ~2400px
+// front card shown beside it. Skipped when the render is already large.
+async function ensureMinSize(buffer) {
+  try {
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(buffer).metadata();
+    if (Math.max(meta.width, meta.height) >= 1800) return buffer;
+    const scale = 2048 / Math.max(meta.width, meta.height);
+    return await sharp(buffer)
+      .resize(Math.round(meta.width * scale), Math.round(meta.height * scale), { kernel: 'lanczos3' })
+      .png().toBuffer();
+  } catch (e) {
+    console.log(`ensureMinSize skipped (${e.message})`);
     return buffer;
   }
 }
@@ -545,7 +570,12 @@ async function intake({ quietEmpty = false } = {}) {
         front.mimeType = 'image/png';
       }
 
-      const redoNotes = isRedo ? String(board[existing.row - 1][7] || '').trim() : '';
+      // Strip any accumulated "regenerated with:" prefixes and [auto-check]
+      // tags so repeated REDOs don't nest the remark into unreadability.
+      const redoNotes = (isRedo ? String(board[existing.row - 1][7] || '').trim() : '')
+        .replace(/^(\s*regenerated with:\s*)+/i, '')
+        .replace(/\s*\[auto-check[^\]]*\]\s*/gi, ' ')
+        .trim();
       const designerNotes = String(row[col.notes] || '').trim();
       const prompt = OWNER_PROMPT(categoryLabel, String(row[col.size] || '').trim(),
         [designerNotes, redoNotes].filter(Boolean).join('. '));
