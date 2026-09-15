@@ -54,6 +54,35 @@ const CATEGORIES = {
   'tote bags':     { dir: 'totebag',     scene: 'a lifestyle setting such as a bench, table or outdoor scene with the tote upright' },
 };
 
+// Designers occasionally misclick the form's category dropdown (a placemat
+// filed as Rugs) or mistype the style prefix (RG on a table runner). Resolve
+// the category by majority among the form pick, the style-number prefix and
+// the description: when prefix and description agree against the form, the
+// dropdown was the mistake; otherwise the form pick stands.
+const PREFIX_CATEGORY = {
+  RG: 'rugs', PM: 'placemats', TR: 'table runners', CH: 'cushions',
+  TH: 'throws', BD: 'bedding', BM: 'bath mats', BG: 'tote bags', TB: 'tote bags',
+};
+const DESC_CATEGORY = [
+  [/RUNNER/, 'table runners'], [/PLACE\s*MAT/, 'placemats'], [/BATH\s*MAT/, 'bath mats'],
+  [/PILLOW\s*CASE|DUVET|QUILT|SHEET|BEDDING|BED\b/, 'bedding'], [/CUSHION|PILLOW/, 'cushions'],
+  [/THROW|BLANKET/, 'throws'], [/RUG|DHURRIE|DURRIE/, 'rugs'], [/TOTE|BAG/, 'tote bags'],
+];
+function resolveCategory(formLabel, style, description) {
+  const form = String(formLabel || '').trim().toLowerCase();
+  const pm = String(style || '').toUpperCase().match(/^CH[DF]-([A-Z]+)-/);
+  const fromPrefix = pm ? PREFIX_CATEGORY[pm[1]] || null : null;
+  const d = String(description || '').toUpperCase();
+  const fromDesc = (DESC_CATEGORY.find(([re]) => re.test(d)) || [])[1] || null;
+  if (fromPrefix && fromDesc && fromPrefix === fromDesc && fromPrefix !== form) {
+    return { label: fromPrefix, note: `category auto-corrected: form said "${formLabel}", but style number and description both say ${fromPrefix}` };
+  }
+  if (fromPrefix && fromPrefix !== form && fromDesc === form) {
+    return { label: form, note: `style prefix suggests ${fromPrefix} but form and description agree on ${form} - check the style number` };
+  }
+  return { label: form, note: null };
+}
+
 // ---------------------------------------------------------------------------
 // Scale guidance. Image models cannot reason from raw measurements, but they
 // reliably follow RELATIONAL constraints against familiar reference objects
@@ -244,6 +273,11 @@ const FRAMING_RULES =
   ' visible with clear margin on every side; when something must be cut off at the canvas edge,' +
   ' crop background or furniture - NEVER any part of the product.';
 
+// "Your prepayment credits are depleted" comes back as a 429 like a rate
+// limit, but it is permanent until someone tops up - never retry it, and
+// tell people instead of silently doing nothing for days.
+const isBillingError = (e) => /prepayment credits|credits are depleted|billing/i.test(String(e && e.message ? e.message : JSON.stringify(e || '')));
+
 function geminiTextModel() {
   const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
   const names = models.map((m) => m.name.replace(/^models\//, ''));
@@ -261,6 +295,7 @@ function geminiTextModel() {
       geminiCall(candidate, [{ text: 'Reply with the single word: ok' }]);
       return candidate;
     } catch (e) {
+      if (isBillingError(e)) throw new Error(`GEMINI_BILLING: ${String(e.message).slice(0, 200)}`);
       console.log(`  text model ${candidate} unavailable, trying next (${String(e.message).slice(0, 100)})`);
     }
   }
@@ -344,6 +379,7 @@ async function generateLifestyle(model, prompt, imageBase64, mimeType) {
       delete request.generationConfig;
       body = curlJson(url, request);
     }
+    if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
     const transient = body.error && (
       [429, 500, 503, 504].includes(body.error.code) ||
       /UNAVAILABLE|Deadline|overloaded|RESOURCE_EXHAUSTED|INTERNAL/i.test(JSON.stringify(body.error)));
@@ -395,6 +431,11 @@ async function ensureMinSize(buffer) {
   }
 }
 
+// The verifier grades a faithful render with normal scene lighting as 7/10
+// ("minor tone variation"); 8+ is rare. Accepting at 7 makes most designs a
+// single generation instead of always burning three attempts.
+const ACCEPT_FIDELITY = 7;
+
 // Full quality loop: deep-scan the product, generate with the design
 // inventory in the prompt, verify the output against the original, and retry
 // with concrete corrections. Returns { buf, check } for the best attempt.
@@ -429,7 +470,7 @@ async function generateVerified(imageModel, textModel, prompt, front, dims, styl
       || (check.shapeOk === best.check.shapeOk && check.fidelity > best.check.fidelity)) {
       best = { buf, check };
     }
-    if (check.shapeOk && check.fidelity >= 8) break;
+    if (check.shapeOk && check.fidelity >= ACCEPT_FIDELITY) break;
     corrections = ' CORRECTIONS - a previous attempt failed verification; you MUST fix all of these: ' +
       check.issues.join('; ') + '.';
   }
@@ -509,9 +550,36 @@ function teamFixFor(error) {
 // ---------------------------------------------------------------------------
 // intake: new submissions -> generated lifestyle -> review board
 // ---------------------------------------------------------------------------
+async function billingAlert(quiet) {
+  if (quiet) return;
+  try {
+    await bridge('notify', {
+      subject: 'ACTION NEEDED: CHD image generation stopped - Gemini prepaid credits depleted',
+      body:
+        `The design pipeline cannot generate lifestyle images: the Gemini API project reports its prepaid credits are depleted.\n\n` +
+        `Top up at https://ai.studio/projects (or switch the project to postpaid billing so this cannot recur). ` +
+        `Submissions are safe on the responses sheet and will be processed automatically at the next run once credits are restored.\n\n` +
+        `- CHD design pipeline (automated)`,
+    });
+    console.log('intake: billing alert emailed');
+  } catch (e) {
+    console.log(`intake: billing alert email skipped (${String(e.message).slice(0, 120)})`);
+  }
+}
+
 async function intake({ quietEmpty = false } = {}) {
-  const model = await geminiImageModel();
-  const textModel = geminiTextModel();
+  let model, textModel;
+  try {
+    model = await geminiImageModel();
+    textModel = geminiTextModel();
+  } catch (e) {
+    if (isBillingError(e) || /GEMINI_BILLING/.test(String(e.message))) {
+      console.log(`intake: STOPPED - ${e.message}`);
+      await billingAlert(quietEmpty);
+      process.exit(2);
+    }
+    throw e;
+  }
   console.log(`intake: image model ${model}, analysis model ${textModel}`);
 
   const { values: responses } = await bridge('read', { sheetId: RESPONSES_SHEET });
@@ -528,11 +596,17 @@ async function intake({ quietEmpty = false } = {}) {
   let processed = 0;
   let attempted = 0; // NEW/REDO rows found, whether or not generation succeeded
   const failures = []; // styles whose generation/upload failed this run
+  const categoryNotes = []; // auto-corrections / suspicious style prefixes to tell the team
+  let billingStopped = false;
   for (let r = 1; r < responses.length; r++) {
     const row = responses[r];
     const style = String(row[col.style] || '').trim();
-    const categoryLabel = String(row[col.category] || '').trim();
+    const resolved = resolveCategory(row[col.category], style, row[col.description]);
+    const categoryLabel = resolved.label
+      ? resolved.label.replace(/\b\w/g, (c) => c.toUpperCase()) // board shows title case
+      : String(row[col.category] || '').trim();
     const category = CATEGORIES[categoryLabel.toLowerCase()];
+    if (resolved.note) console.log(`intake: ${style}: ${resolved.note}`);
     if (!style || !category) {
       if (style) { attempted++; console.log(`intake: SKIP ${style}: unknown category "${categoryLabel}"`); }
       continue;
@@ -583,7 +657,9 @@ async function intake({ quietEmpty = false } = {}) {
       const dims = parseInches(String(row[col.size] || ''));
       const result = await generateVerified(model, textModel, prompt, front, dims, style);
       const lifestyle = result.buf;
-      const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`;
+      const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`
+        + (resolved.note ? ` [${resolved.note}]` : '');
+      if (resolved.note) categoryNotes.push(`${style}: ${resolved.note}`);
 
       const suffix = isRedo ? `-v${Date.now() % 1000}` : '';
       const up = await bridge('upload', {
@@ -634,10 +710,16 @@ async function intake({ quietEmpty = false } = {}) {
       // style lands on the board, later rows with the same style are skipped.
       boardStyles.set(style.toUpperCase(), { row: -1, status: '' });
     } catch (e) {
+      if (/GEMINI_BILLING/.test(String(e.message)) || isBillingError(e)) {
+        console.log(`intake: STOPPED at ${style} - ${String(e.message).slice(0, 200)}`);
+        billingStopped = true;
+        break; // every remaining design would fail the same way; they stay pending for the next run
+      }
       console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
       failures.push({ style, error: String(e.message).slice(0, 200) });
     }
   }
+  if (billingStopped) await billingAlert(quietEmpty);
   console.log(`intake: done, ${processed} design(s) sent for review`);
   // A style can fail on an old broken form row and still succeed via the
   // designer's newer resubmission later in the same run - only report
@@ -666,6 +748,9 @@ async function intake({ quietEmpty = false } = {}) {
           `automatic quality check as [auto-check N/10].` +
           (transient.length
             ? `\n\nNote: ${transient.length} design(s) hit a temporary error this run and will be retried automatically at the next check: ${transient.map((f) => f.style).join(', ')}.`
+            : '') +
+          (categoryNotes.length
+            ? `\n\nCategory check - please confirm these:\n` + categoryNotes.map((n) => `- ${n}`).join('\n')
             : '') +
           `\n\n- CHD design pipeline (automated)`,
       });
@@ -697,6 +782,7 @@ async function intake({ quietEmpty = false } = {}) {
   } catch (e) {
     console.log(`intake: team notification skipped (${String(e.message).slice(0, 120)}) - redeploy the bridge script to enable emails`);
   }
+  if (billingStopped) process.exit(2);
 }
 
 // ---------------------------------------------------------------------------
