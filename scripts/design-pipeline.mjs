@@ -307,6 +307,7 @@ function geminiCall(model, parts) {
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
     { contents: [{ parts }] }
   );
+  if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
   if (body.error) throw new Error(`gemini ${model}: ${JSON.stringify(body.error).slice(0, 300)}`);
   return (body?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
 }
@@ -449,6 +450,7 @@ async function generateVerified(imageModel, textModel, prompt, front, dims, styl
       ` most distinctive details: ${a.distinctive}.`;
     console.log(`  ${style}: scanned - border: ${String(a.border).slice(0, 60)}`);
   } catch (e) {
+    if (/GEMINI_BILLING/.test(String(e.message))) throw e; // never mask a depleted account as a scan hiccup
     console.log(`  ${style}: deep-scan failed (${e.message}) - generating without inventory`);
   }
 
@@ -460,6 +462,7 @@ async function generateVerified(imageModel, textModel, prompt, front, dims, styl
     try {
       check = verifyLifestyle(textModel, front.base64, front.mimeType, buf.toString('base64'), dims);
     } catch (e) {
+      if (/GEMINI_BILLING/.test(String(e.message))) throw e; // never mask a depleted account as an unverified pass
       console.log(`  ${style}: verification failed (${e.message}) - accepting attempt as-is`);
       check = { fidelity: 7, shapeOk: true, issues: ['auto-verification unavailable'] };
     }
