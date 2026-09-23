@@ -609,15 +609,15 @@ async function intake({ quietEmpty = false } = {}) {
       ? resolved.label.replace(/\b\w/g, (c) => c.toUpperCase()) // board shows title case
       : String(row[col.category] || '').trim();
     const category = CATEGORIES[categoryLabel.toLowerCase()];
-    if (resolved.note) console.log(`intake: ${style}: ${resolved.note}`);
     if (!style || !category) {
       if (style) { attempted++; console.log(`intake: SKIP ${style}: unknown category "${categoryLabel}"`); }
       continue;
     }
     const existing = boardStyles.get(style.toUpperCase());
     const isRedo = existing && existing.status === 'REDO';
-    if (existing && !isRedo) continue; // already on the board, not a redo
+    if (existing && !isRedo) continue; // already on the board, not a redo - skip before re-logging a stale category note
     attempted++;
+    if (resolved.note) console.log(`intake: ${style}: ${resolved.note}`);
 
     const frontId = driveIdFromCell(row[col.front]);
     if (!frontId) {
