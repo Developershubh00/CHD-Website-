@@ -303,11 +303,22 @@ function geminiTextModel() {
 }
 
 function geminiCall(model, parts) {
-  const body = curlJson(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-    { contents: [{ parts }] }
-  );
-  if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
+  let body;
+  // Text calls (deep-scan, verify) used to fail outright on the same transient
+  // 429/5xx "high demand" blips that generateLifestyle already rides out below -
+  // that silently skipped verification on any busy spell, not just real outages.
+  for (let attempt = 1; ; attempt++) {
+    body = curlJson(url, { contents: [{ parts }] });
+    if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
+    const transient = body.error && (
+      [429, 500, 503, 504].includes(body.error.code) ||
+      /UNAVAILABLE|Deadline|overloaded|RESOURCE_EXHAUSTED|INTERNAL/i.test(JSON.stringify(body.error)));
+    if (!transient || attempt >= 4) break;
+    const waitSec = attempt * 20;
+    console.log(`  gemini ${model} busy (${body.error.code}), waiting ${waitSec}s then retrying (${attempt}/4)...`);
+    execFileSync('sleep', [String(waitSec)]);
+  }
   if (body.error) throw new Error(`gemini ${model}: ${JSON.stringify(body.error).slice(0, 300)}`);
   return (body?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
 }
@@ -463,11 +474,15 @@ async function generateVerified(imageModel, textModel, prompt, front, dims, styl
       check = verifyLifestyle(textModel, front.base64, front.mimeType, buf.toString('base64'), dims);
     } catch (e) {
       if (/GEMINI_BILLING/.test(String(e.message))) throw e; // never mask a depleted account as an unverified pass
-      console.log(`  ${style}: verification failed (${e.message}) - accepting attempt as-is`);
-      check = { fidelity: 7, shapeOk: true, issues: ['auto-verification unavailable'] };
+      // A real pass (fidelity/shapeOk) here would be a lie - we never actually
+      // compared this attempt to the real product. Record it as unverified so
+      // reviewers know to eyeball this one, instead of stamping a fake 7/10.
+      console.log(`  ${style}: verification failed (${e.message}) - accepting attempt as unverified`);
+      check = { fidelity: null, shapeOk: null, issues: ['auto-verification unavailable - check shape/fidelity manually'], unverified: true };
     }
-    console.log(`  ${style} attempt ${attempt}: fidelity ${check.fidelity}/10, shape ${check.shapeOk ? 'ok' : 'WRONG'}` +
+    console.log(`  ${style} attempt ${attempt}: fidelity ${check.fidelity ?? '?'}/10, shape ${check.shapeOk === null ? '?' : check.shapeOk ? 'ok' : 'WRONG'}` +
       (check.issues.length ? ' | ' + check.issues.slice(0, 3).join('; ').slice(0, 160) : ''));
+    if (check.unverified) { best = { buf, check }; break; } // no real signal to compare or correct on - stop here
     if (!best
       || (check.shapeOk && !best.check.shapeOk)
       || (check.shapeOk === best.check.shapeOk && check.fidelity > best.check.fidelity)) {
@@ -660,7 +675,9 @@ async function intake({ quietEmpty = false } = {}) {
       const dims = parseInches(String(row[col.size] || ''));
       const result = await generateVerified(model, textModel, prompt, front, dims, style);
       const lifestyle = result.buf;
-      const qcNote = `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`
+      const qcNote = (result.check.unverified
+        ? `[auto-check UNAVAILABLE - please verify shape/fidelity manually]`
+        : `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`)
         + (resolved.note ? ` [${resolved.note}]` : '');
       if (resolved.note) categoryNotes.push(`${style}: ${resolved.note}`);
 
