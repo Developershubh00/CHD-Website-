@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect, useRef } from "react";
+import { Fragment, useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { ArrowLeft, Search, X, Loader2 } from "lucide-react";
+import { ArrowLeft, ArrowUpDown, Search, X, Loader2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePageMeta } from "@/hooks/use-page-meta";
-import { slideCount } from "@/lib/catalog";
+import { randomSeed, seededRandom, shuffle, slideCount } from "@/lib/catalog";
 
 // Load ONLY data.json files (small - OK to eager load)
 const dataModules = import.meta.glob('/src/assets/**/data.json', {
@@ -106,7 +107,7 @@ function generateProductTags(specs: { description?: string; technique?: string; 
   // Split content by common separators and add each material as tag
   if (specs.content) {
     const materials = specs.content
-      .split(/[+,\/&]/)
+      .split(/[+,/&]/)
       .map(m => m.trim().toUpperCase())
       .filter(m => m.length > 0);
     tags.push(...materials);
@@ -120,6 +121,7 @@ function generateProductTags(specs: { description?: string; technique?: string; 
 // Product type definition (matching ProductDetail.tsx)
 type Product = {
   id: string;
+  slideNum: number; // position in the library; higher = added later
   src: string; // Main/primary image (for category grid)
   images?: string[]; // Array of 2 images for product detail page (optional for category page)
   title: string;
@@ -152,6 +154,7 @@ const categoryData: Record<string, {
       
       return {
         id: `rug-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrl('rugs', slideNum),
         images: getProductImages('rugs', slideNum),
         title: specs.styleNumber || `CHD-RG-${String(slideNum).padStart(4, '0')}`,
@@ -176,6 +179,7 @@ const categoryData: Record<string, {
       
       return {
         id: `placemat-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrl('placemat', slideNum),
         images: getProductImages('placemat', slideNum),
         title: specs.styleNumber || `CHD-PM-${String(slideNum).padStart(4, '0')}`,
@@ -200,6 +204,7 @@ const categoryData: Record<string, {
       
       return {
         id: `runner-${slideNum}`,
+        slideNum,
         // Use lifestyle as main, plus product shots and table
         src: getImageUrlPng('TableRunner', slideNum, 'lifestyle.png'),
         images: getProductImages('TableRunner', slideNum, true), // Use PNG for TableRunner
@@ -225,6 +230,7 @@ const categoryData: Record<string, {
       
       return {
         id: `cushion-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrl('cushion', slideNum),
         images: getProductImages('cushion', slideNum),
         title: specs.styleNumber || `CHD-CU-${String(slideNum).padStart(4, '0')}`,
@@ -249,6 +255,7 @@ const categoryData: Record<string, {
       
       return {
         id: `throw-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrl('throw', slideNum),
         images: getProductImages('throw', slideNum, true), // Use PNG for throw
         title: specs.styleNumber || `CHD-TH-${String(slideNum).padStart(4, '0')}`,
@@ -273,6 +280,7 @@ const categoryData: Record<string, {
       
       return {
         id: `bedding-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrl('bedding', slideNum),
         images: getProductImages('bedding', slideNum),
         title: specs.styleNumber || `CHD-BD-${String(slideNum).padStart(4, '0')}`,
@@ -297,6 +305,7 @@ const categoryData: Record<string, {
       
       return {
         id: `bathmat-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrlPng('bathmat', slideNum),
         images: getProductImages('bathmat', slideNum, true), // Use PNG for bathmat
         title: specs.styleNumber || `CHD-BM-${String(slideNum).padStart(4, '0')}`,
@@ -323,6 +332,7 @@ const categoryData: Record<string, {
       
       return {
         id: `chairpad-${slideNum}`,
+        slideNum,
         src: getLifestyleImageUrlPng('totebag', slideNum),
         images: getProductImages('totebag', slideNum), // Use JPG for totebag
         title: specs.styleNumber || `CHD-TB-${String(slideNum).padStart(4, '0')}`,
@@ -342,6 +352,53 @@ const categoryData: Record<string, {
 
 // Number of products to load initially and on each scroll
 const ITEMS_PER_PAGE = 9;
+
+type SortKey = "latest" | "number" | "technique" | "content";
+
+const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "latest", label: "Latest first" },
+  { value: "number", label: "Design number" },
+  { value: "technique", label: "Technique" },
+  { value: "content", label: "Content" },
+];
+const DEFAULT_SORT: SortKey = "latest";
+
+// "Latest first" keeps this many of the newest designs at the top (two rows on
+// desktop); everything below them is shuffled afresh for each visit, so buyers
+// keep discovering designs they have not seen yet.
+const LATEST_PINNED = 6;
+
+// The number in a style code, e.g. CHD-RG-1120 -> 1120
+const styleNumber = (product: Product) => {
+  const match = /(\d+)\s*$/.exec(product.styleNumber ?? "");
+  return match ? parseInt(match[1], 10) : Number.POSITIVE_INFINITY;
+};
+
+const groupLabel = (product: Product, sortKey: SortKey) =>
+  ((sortKey === "technique" ? product.technique : product.content) ?? "").trim().toUpperCase() || "OTHER";
+
+function orderProducts(products: Product[], sortKey: SortKey, seed: number): Product[] {
+  const newestFirst = [...products].sort((a, b) => b.slideNum - a.slideNum);
+  switch (sortKey) {
+    case "number":
+      return [...products].sort((a, b) => styleNumber(a) - styleNumber(b) || a.slideNum - b.slideNum);
+    case "technique":
+    case "content":
+      // alphabetical groups, newest first inside each group (sort is stable), OTHER last
+      return newestFirst.sort((a, b) => {
+        const groupA = groupLabel(a, sortKey);
+        const groupB = groupLabel(b, sortKey);
+        if (groupA === groupB) return 0;
+        if (groupA === "OTHER") return 1;
+        if (groupB === "OTHER") return -1;
+        return groupA.localeCompare(groupB);
+      });
+    default:
+      return newestFirst
+        .slice(0, LATEST_PINNED)
+        .concat(shuffle(newestFirst.slice(LATEST_PINNED), seededRandom(seed)));
+  }
+}
 
 const ProductCard = ({
   product,
@@ -547,7 +604,21 @@ const Category = () => {
     return "";
   };
   
+  const getInitialSort = (): SortKey => {
+    const saved = categoryId ? sessionStorage.getItem(`category-sort-${categoryId}`) : null;
+    return SORT_OPTIONS.some((option) => option.value === saved) ? (saved as SortKey) : DEFAULT_SORT;
+  };
+
+  // The shuffled part of "Latest first" is seeded, so the same order comes back
+  // when the visitor returns from a product page.
+  const getInitialSeed = () => {
+    const saved = categoryId ? sessionStorage.getItem(`category-seed-${categoryId}`) : null;
+    return saved ? parseInt(saved, 10) : randomSeed();
+  };
+
   const [searchQuery, setSearchQuery] = useState(getInitialSearchQuery);
+  const [sortKey, setSortKey] = useState<SortKey>(getInitialSort);
+  const [seed] = useState(getInitialSeed);
   const [visibleCount, setVisibleCount] = useState(getInitialVisibleCount);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -568,12 +639,16 @@ const Category = () => {
       : undefined
   );
 
-  const filteredProducts = useMemo(() => {
-    if (!category) return [];
-    const query = searchQuery.trim().toLowerCase();
-    if (!query) return category.products;
+  const orderedProducts = useMemo(
+    () => (category ? orderProducts(category.products, sortKey, seed) : []),
+    [category, sortKey, seed]
+  );
 
-    return category.products.filter((product) => {
+  const filteredProducts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return orderedProducts;
+
+    return orderedProducts.filter((product) => {
       const title = product.title?.toLowerCase() ?? "";
       const desc = product.description?.toLowerCase() ?? "";
       const tags = product.tags ?? [];
@@ -596,12 +671,24 @@ const Category = () => {
         tags.some((tag) => (tag ?? "").toLowerCase().includes(query))
     );
     });
-  }, [category, searchQuery]);
+  }, [orderedProducts, searchQuery]);
 
   // Products currently visible (paginated)
   const visibleProducts = useMemo(() => {
     return filteredProducts.slice(0, visibleCount);
   }, [filteredProducts, visibleCount]);
+
+  // Designs per technique/content group, shown in the group headers
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (sortKey === "technique" || sortKey === "content") {
+      filteredProducts.forEach((product) => {
+        const label = groupLabel(product, sortKey);
+        counts.set(label, (counts.get(label) ?? 0) + 1);
+      });
+    }
+    return counts;
+  }, [filteredProducts, sortKey]);
 
   const hasMore = visibleCount < filteredProducts.length;
 
@@ -616,7 +703,7 @@ const Category = () => {
     if (pendingScroll === null) {
       setVisibleCount(ITEMS_PER_PAGE);
     }
-  }, [searchQuery]);
+  }, [searchQuery, sortKey]);
 
   // Restore scroll position after products are rendered
   useEffect(() => {
@@ -630,6 +717,8 @@ const Category = () => {
             sessionStorage.removeItem(`category-scroll-${categoryId}`);
             sessionStorage.removeItem(`category-count-${categoryId}`);
             sessionStorage.removeItem(`category-search-${categoryId}`);
+            sessionStorage.removeItem(`category-sort-${categoryId}`);
+            sessionStorage.removeItem(`category-seed-${categoryId}`);
           }
           setPendingScroll(null);
         }, 50);
@@ -676,6 +765,8 @@ const Category = () => {
       if (searchQuery) {
         sessionStorage.setItem(`category-search-${categoryId}`, searchQuery);
       }
+      sessionStorage.setItem(`category-sort-${categoryId}`, sortKey);
+      sessionStorage.setItem(`category-seed-${categoryId}`, String(seed));
     }
     navigate(`/category/${categoryId}/${productId}`);
   };
@@ -709,9 +800,9 @@ const Category = () => {
             <h1 className="text-4xl md:text-6xl font-light mb-4">{category.name}</h1>
           </div>
 
-          {/* Search Bar */}
-          <div className="mb-12 max-w-xl">
-            <div className="relative">
+          {/* Search + sort */}
+          <div className="mb-12 flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="relative w-full sm:max-w-xl">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
               <Input
                 type="text"
@@ -729,6 +820,21 @@ const Category = () => {
                 </button>
               )}
             </div>
+            <Select value={sortKey} onValueChange={(value) => setSortKey(value as SortKey)}>
+              <SelectTrigger className="w-full sm:w-52" aria-label="Sort designs">
+                <span className="flex items-center gap-2">
+                  <ArrowUpDown className="w-4 h-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+                  <SelectValue />
+                </span>
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Product Count */}
@@ -740,13 +846,26 @@ const Category = () => {
           {filteredProducts.length > 0 ? (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {visibleProducts.map((product) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    onClick={() => handleProductClick(product.id)}
-                  />
-                ))}
+                {visibleProducts.map((product, index) => {
+                  const grouped = sortKey === "technique" || sortKey === "content";
+                  const label = grouped ? groupLabel(product, sortKey) : "";
+                  const startsGroup =
+                    grouped && (index === 0 || groupLabel(visibleProducts[index - 1], sortKey) !== label);
+                  const count = groupCounts.get(label) ?? 0;
+                  return (
+                    <Fragment key={product.id}>
+                      {startsGroup && (
+                        <h2 className="col-span-full flex items-baseline justify-between border-b border-border pb-2 pt-6 first:pt-0 text-sm font-light tracking-[0.18em] text-foreground">
+                          <span>{label}</span>
+                          <span className="text-xs tracking-normal text-muted-foreground">
+                            {count} {count === 1 ? "design" : "designs"}
+                          </span>
+                        </h2>
+                      )}
+                      <ProductCard product={product} onClick={() => handleProductClick(product.id)} />
+                    </Fragment>
+                  );
+                })}
               </div>
 
               {/* Load More Trigger & Indicator */}

@@ -35,6 +35,7 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
+import { writeCardImage } from './lib/card-image.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -916,6 +917,8 @@ async function publish({ commit }) {
       .resize({ width: 2400, height: 2400, fit: 'inside', withoutEnlargement: true })
       .png().toBuffer());
     fs.writeFileSync(path.join(newImages, 'lifestyle.png'), await toPng(lifestyle.base64));
+    // small square copy for the category cards on the home and products pages
+    await writeCardImage(sharp, path.join(newImages, 'lifestyle.png'), path.join(newImages, 'card.webp'));
     fs.writeFileSync(path.join(newImages, 'image_01.png'), await toPng(front.base64));
     if (back) fs.writeFileSync(path.join(newImages, 'back.png'), await toPng(back.base64));
     if (close) fs.writeFileSync(path.join(newImages, 'image_02.png'), await toPng(close.base64));

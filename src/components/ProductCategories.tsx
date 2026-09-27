@@ -97,9 +97,9 @@
 //     </section>
 //   );
 // };
-import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
+import { useCategoryCardImages } from "@/hooks/use-category-cards";
 import rugImage from "@/assets/product-rug.png";
 import placematImage from "@/assets/product-placemat.png";
 import runnerImage from "@/assets/product-runner.png";
@@ -108,7 +108,6 @@ import throwImage from "@/assets/product-throw.jpg";
 import beddingImage from "@/assets/product-bedding.jpg";
 import bathmatImage from "@/assets/product-bathmat.jpg";
 import chairpadImage from "@/assets/product-chairpad.jpg";
-import { getProductCardImages } from "@/lib/productCardImages";
 
 const categories = [
   {
@@ -161,71 +160,8 @@ const categories = [
   },
 ];
 
-const baseImageMap: Record<string, string> = {
-  rugs: rugImage,
-  placemats: placematImage,
-  runners: runnerImage,
-  cushions: cushionImage,
-  throws: throwImage,
-  bedding: beddingImage,
-  bathmats: bathmatImage,
-  chairpads: chairpadImage,
-};
-
-const categoryImagesMap: Record<string, string[]> = Object.fromEntries(
-  categories.map((c) => [c.id, getProductCardImages(c.id, baseImageMap[c.id as keyof typeof baseImageMap])])
-);
-
-// Column-based staggered intervals (slower/smoother) – ~7.5s base so user can view each image
-const intervalPattern = [7500, 9300, 11100, 8400];
-
-// Snake pattern mapping for 4-column grid: top-left→right→bottom-right→left
-// Visual order: [0][1][2][3] then [7][6][5][4]
-//                [4][5][6][7]
-const snakePattern = [0, 1, 2, 3, 7, 6, 5, 4];
-
 export const ProductCategories = () => {
-  const [activeIndexes, setActiveIndexes] = useState<number[]>(() => categories.map(() => 0));
-
-  // Single repeating stagger wave: no per-card interval, only one wave after another
-  const waveTimeoutRef = useRef<ReturnType<typeof setTimeout>[]>([]);
-  useEffect(() => {
-    const STAGGER_MS = 400;
-    const WAVE_INTERVAL_MS = 6000;
-
-    function runWave() {
-      waveTimeoutRef.current.forEach(clearTimeout);
-      waveTimeoutRef.current = [];
-      categories.forEach((cat, idx) => {
-        const images = categoryImagesMap[cat.id] ?? [cat.image];
-        if (images.length < 2) return;
-        const visualPosition = snakePattern.indexOf(idx);
-        const t = setTimeout(() => {
-          setActiveIndexes((prev) => {
-            const next = [...prev];
-            next[idx] = (next[idx] + 1) % images.length;
-            return next;
-          });
-        }, visualPosition * STAGGER_MS);
-        waveTimeoutRef.current.push(t);
-      });
-      waveTimeoutRef.current.push(setTimeout(runWave, WAVE_INTERVAL_MS));
-    }
-    runWave();
-    return () => waveTimeoutRef.current.forEach(clearTimeout);
-  }, []);
-
-  // Compute the image to show for each card
-  const cardImages = useMemo(
-    () =>
-      categories.map((cat, idx) => {
-        const list = categoryImagesMap[cat.id] ?? [cat.image];
-        if (!list.length) return cat.image;
-        const safeIndex = activeIndexes[idx] % list.length;
-        return list[safeIndex];
-      }),
-    [activeIndexes]
-  );
+  const cardImages = useCategoryCardImages(categories);
 
   return (
     <section id="products" className="py-24 md:py-32 px-6 bg-gradient-to-b from-background via-muted/20 to-background">
@@ -266,12 +202,9 @@ export const ProductCategories = () => {
                     exit={{ opacity: 0 }}
                     transition={{ duration: 1.2, ease: "easeInOut" }}
                     onError={(e) => {
-                      const target = e.currentTarget as HTMLImageElement;
-                      if (target.src.endsWith(".jpg")) {
-                        target.src = target.src.replace(".jpg", ".png");
-                      } else {
-                        target.src = baseImageMap[category.id] ?? category.image;
-                      }
+                      // a missing card image falls back to this category's own cover, never another category's design
+                      const target = e.currentTarget;
+                      if (!target.src.endsWith(category.image)) target.src = category.image;
                     }}
                 />
                 </AnimatePresence>
