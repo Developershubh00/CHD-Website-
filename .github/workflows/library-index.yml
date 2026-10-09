@@ -1,0 +1,105 @@
+# Keeps library-index.json (the design list the Google Drive backup reads) in step with the library.
+#
+# WHY THIS EXISTS
+#   The Drive backup script (scripts/chd-library-backup.gs) does not look at the pictures on GitHub directly: it
+#   reads library-index.json from the main branch and copies whatever that list says is new or changed. The daily
+#   publish (scripts/design-pipeline.mjs publish --commit) already rewrites the index in the SAME commit as the new
+#   designs, so on a normal day this workflow finds the index current and does nothing. But any other way of getting
+#   images or specs onto main (a hand edit, a merged pull request, a restore from the backup, a publish whose index
+#   step printed a warning) would leave the index stale, and the Drive backup would never hear about those designs.
+#   This workflow closes that gap: when pictures or specs change on main, it rebuilds the index and, only if the file
+#   really changed, commits it to main as github-actions[bot].
+#
+# WHEN IT RUNS
+#   Only for a push to main that touches a design (src/assets/<dir>/slide_NNN/... or public/images/<dir>/slide_NNN/...)
+#   or the naming code (scripts/lib/library-index.mjs). The paths are narrowed to the slide folders on purpose: src/assets
+#   also holds the site's own logos and hero pictures, and a change to one of those cannot change the index, so it
+#   must not start a run (every run checks out the whole repository, about 2 GB of pictures).
+#
+# WHY IT CANNOT LOOP
+#   1. library-index.json is not in the `paths` list below, so the bot's own commit does not match the trigger.
+#   2. Commits pushed with the built-in GITHUB_TOKEN do not start new workflow runs (GitHub's rule, there to stop
+#      exactly this kind of loop), so even a path match would not re-trigger it.
+#   3. The step commits only when the regenerated file differs from the committed one (`index` is deterministic
+#      and has no dates, so unchanged input gives a byte-identical file).
+#
+# IF main MOVES WHILE IT RUNS
+#   The push is then rejected. It is retried ONCE: the step fetches the new main, throws its own index commit away,
+#   rebuilds the index on the new tip (nothing to merge, so no conflict even if the other push also touched
+#   library-index.json) and pushes again. If that push is also rejected the step fails and the run turns red in the
+#   Actions tab. It never force-pushes. A push that is refused for another reason (for example a branch protection rule
+#   that does not let the bot push to main) fails the same way; docs/IMAGE-LIBRARY.md says how to refresh the index by hand.
+#
+# SIDE EFFECT TO KNOW
+#   A bot commit is a push to main, so Vercel (which watches main) builds the site once more. library-index.json is not
+#   part of the site, so the result is identical. It happens only on the rare days this workflow has something to commit,
+#   never on a normal publish day.
+#
+# Checked locally against throwaway git repos with scripts/tests/daily-flow.mjs (it runs this file's shell step);
+# GitHub Actions itself can only be exercised on GitHub.
+name: Refresh library-index.json
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/assets/*/slide_*/**'
+      - 'public/images/*/slide_*/**'
+      - 'scripts/lib/library-index.mjs'
+  workflow_dispatch: # the "Run workflow" button in the Actions tab; a no-op when the index is already current
+
+permissions:
+  contents: write
+
+# One run at a time, never cancelled half-way: a second push waits for the first run to finish.
+concurrency:
+  group: library-index
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    # Generous on purpose: the checkout is the whole repository (about 2 GB of pictures, because the index records the
+    # size of every picture). The Node work itself takes seconds.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main # the tip of main when the job starts, even if a newer push landed while this run was queued
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Plain Node, no npm install: export-library.mjs and library-index.mjs use only Node's built-in modules.
+      - name: Rebuild library-index.json and push it if it changed
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          node scripts/export-library.mjs index
+          git add -- library-index.json
+          if git diff --cached --quiet -- library-index.json; then
+            echo "library-index.json is already up to date: nothing to commit."
+            exit 0
+          fi
+          git commit -m "Refresh library-index.json"
+
+          if git push origin HEAD:main; then
+            echo "library-index.json refreshed and pushed to main."
+            exit 0
+          fi
+
+          echo "Push rejected (main moved while this ran). Retrying once from the new tip."
+          git fetch origin main
+          git reset --hard FETCH_HEAD
+          node scripts/export-library.mjs index
+          git add -- library-index.json
+          if git diff --cached --quiet -- library-index.json; then
+            echo "The new tip of main already has an up-to-date library-index.json: nothing to commit."
+            exit 0
+          fi
+          git commit -m "Refresh library-index.json"
+          git push origin HEAD:main
+          echo "library-index.json refreshed and pushed to main (second attempt)."
