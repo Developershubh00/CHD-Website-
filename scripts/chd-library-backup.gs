@@ -3,7 +3,14 @@
  *
  * Copies the whole design library (about 1,400 designs, 4,600 pictures, 2 GB) from the
  * public GitHub repo into YOUR Google Drive, in a clean layout, and then keeps it up to
- * date every night. Paste it once, approve it once, and it runs by itself.
+ * date every day (about 3 PM India time, shortly after the website's 1:30 PM publish, so a
+ * design published today is in Drive today). Paste it once, approve it once, and it runs by itself.
+ *
+ * HOW A NEW DESIGN GETS HERE: designers upload through the Google Form, the team approves the
+ * lifestyle picture, and the website's 1:30 PM publish adds the design to GitHub and refreshes
+ * library-index.json there. This script's daily run (about 3 PM) reads that index and copies
+ * the day's new designs into the SAME Drive folder tree. On a day when new designs were backed
+ * up you get one short email that lists them, so you can see it worked without opening Google.
  *
  * ONE-TIME SETUP (about 5 minutes)
  *   1. Open https://script.google.com and click  New project.
@@ -18,11 +25,11 @@
  *      "Go to CHD Library Backup (unsafe)" -> Allow (it is your own script; Google
  *      shows this for every script that has not been through its review). The list asks for
  *      Drive and Sheets (to create the backup folders, files and the Catalog), connecting to
- *      external services (to read GitHub), managing triggers (the nightly job), sending
- *      email (the summary mail to you) and your email address (to know where to send it).
+ *      external services (to read GitHub), managing triggers (the daily job), sending
+ *      email (the summary mails to you) and your email address (to know where to send them).
  *      If the run stopped at the consent screen, press Run on  setup  once more.
- *   Done. setup() checks connectivity, creates the Drive folder, installs the nightly
- *   job (about 3 AM India time) and starts the first copy. Watch it in the "Execution log"
+ *   Done. setup() checks connectivity, creates the Drive folder, installs the daily
+ *   job (about 3 PM India time) and starts the first copy. Watch it in the "Execution log"
  *   panel at the bottom of the editor (or "Executions" in the left sidebar), or run  status
  *   any time to see progress.
  *
@@ -55,15 +62,20 @@
  *   created" per day (Google does not say whether saving a picture counts against that;
  *   this copy needs about 6,000 creates). So the first copy can take several days, and
  *   if file creation is capped it may do so even on Workspace. Nothing is lost by that: when
- *   a daily limit is hit the script stops cleanly and the 3 AM job carries on the next night,
+ *   a daily limit is hit the script stops cleanly and the daily job carries on the next day,
  *   where it stopped. The log line of every run says how many files it created.
- *   After the first copy a normal night is a quick check (a few seconds) plus copies of
+ *   After the first copy a normal day is a quick check (a few seconds) plus copies of
  *   only what is new or changed.
- *   You get ONE email when the first full copy is complete, and one email if three runs
- *   in a row fail.
+ *   You get ONE email when the first full copy is complete. After that you get one short
+ *   email on each day that new designs were backed up (their style numbers and categories,
+ *   the total now in the backup and the Drive links, and a line naming any design that could not be
+ *   copied yet); a day with nothing new sends no email.
+ *   You also get one email if three runs in a row fail or leave a design uncopied.
  *
  * FUNCTIONS YOU CAN RUN (toolbar function picker)
- *   setup()          one-time install (see above). Safe to run again.
+ *   setup()          one-time install (see above). Safe to run again: it also puts the daily job
+ *                    back to the time set in DAILY_HOUR (always exactly one daily trigger). A daily
+ *                    run does the same by itself if the code was updated without running setup().
  *   sync()           copy what is missing/changed now. Safe to run any time.
  *   selfTest()       read-only check of internet, GitHub, Drive space, mail quota.
  *   status()         prints progress: designs done / total, files, bytes, last error.
@@ -109,7 +121,9 @@ var SAFETY_AFTER_MS = 540000;  // a run that gets killed (6-minute limit, hung c
 var STOP_WAIT_MS = 240000;     // stopAll() waits this long for a running slice to end
 var STOP_CHECK_MS = 10000;     // a running slice looks for a stop request at most this often
 var RETRY_DELAYS_MIN = [5, 15]; // pause before re-trying after the 1st / 2nd failed run in a row
-var DAILY_HOUR = 3;
+var DAILY_HOUR = 15;           // the daily run starts within this hour (script time zone, Asia/Kolkata): 3 PM, about 90 minutes after the website's 1:30 PM publish
+var NEWS_LIST_MAX = 25;        // style numbers named in the "new designs" email (the rest is counted: "... and N more")
+var NEWS_MAX = 300;            // new designs remembered in the state file until their email is sent (more are only counted)
 var FETCH_BATCH = 8;           // parallel downloads per fetchAll call
 var MAX_ATTEMPTS = 3;          // tries per picture per source for transient errors
 var BACKOFF_MS = 1500;
@@ -126,7 +140,7 @@ var SOURCES = ['raw', 'site', 'cdn'];
 
 // ================================== ENTRY POINTS ====================================
 
-/** One-time install: self-test, create the Drive folder, install the nightly trigger, start copying. */
+/** One-time install: self-test, create the Drive folder, install the daily trigger (re-running puts it back to DAILY_HOUR), start copying. */
 function setup() {
   Logger.log('=== CHD library backup: setup ===');
   if (!selfTest()) {
@@ -141,9 +155,24 @@ function setup() {
   sync();
 }
 
-/** The trigger target for the nightly run (kept separate so one-off continuation triggers are easy to tell apart). */
+/** The trigger target for the daily run, about 3 PM India time (kept separate so one-off continuation triggers are easy to tell apart). */
 function syncDaily() {
+  if (!isStopped_()) ensureDailyHour_();
   sync();
+}
+
+/**
+ * The Trigger API cannot say at which hour a trigger runs, so installDailyTrigger_ remembers the hour it used. A daily run that
+ * finds a different one, or none (new code pasted over an older install without running setup(), or DAILY_HOUR edited), puts the
+ * daily trigger right by itself, so the move to DAILY_HOUR does not depend on anyone remembering to run setup(). Never throws.
+ */
+function ensureDailyHour_() {
+  try {
+    if (PropertiesService.getScriptProperties().getProperty('DAILY_HOUR_SET') === String(DAILY_HOUR)) return;
+    installDailyTrigger_();
+  } catch (e) {
+    Logger.log('daily trigger: could not move it to ' + dailyTimeText_() + ' (' + errText_(e) + '); run setup() once.');
+  }
 }
 
 /** Copies whatever is missing or changed. Idempotent, resumable, never runs twice at once. */
@@ -167,7 +196,7 @@ function sync() {
     try {
       deleteTriggers_(['sync']); // the continuation that just fired (they are not auto-removed) and any stale ones
       // Safety net: if this run is killed (6-minute limit, a hung call) it never reaches finish_(),
-      // so without this the copy would wait for the next nightly run. finish_() removes it again.
+      // so without this the copy would wait for the next daily run. finish_() removes it again.
       ScriptApp.newTrigger('sync').timeBased().after(SAFETY_AFTER_MS).create();
     } catch (e0) {
       Logger.log('sync: could not manage triggers at the start: ' + errText_(e0));
@@ -176,7 +205,7 @@ function sync() {
   } catch (e) {
     Logger.log('sync: unexpected error: ' + errText_(e));
     try {
-      deleteTriggers_(['sync']); // an error nobody planned for must not turn into a retry loop; the nightly run tries again
+      deleteTriggers_(['sync']); // an error nobody planned for must not turn into a retry loop; the daily run tries again
     } catch (e1) {
       // nothing more to do
     }
@@ -350,7 +379,7 @@ function recheckAll() {
 }
 
 /**
- * Switches the backup off: removes every trigger this script created (nightly job and any pending
+ * Switches the backup off: removes every trigger this script created (daily job and any pending
  * continuation) and raises the STOPPED flag, so a slice that is running right now ends after the
  * design it is copying and schedules nothing. setup() clears the flag.
  */
@@ -419,6 +448,9 @@ function newCtx_() {
     completed: 0,
     failed: 0,
     kept: 0,
+    newDesigns: 0,          // designs copied for the very first time this run (after the first full copy)
+    firstComplete: false,   // this run is the one that finished the first full copy
+    stuck: [],              // designs this pass could not copy (they are named in the "new designs" email so a stuck one is never silent)
     stopped: false,
     lastStopCheck: t,
     catalogDeferred: false,
@@ -482,7 +514,10 @@ function syncDesigns_(ctx) {
         ctx.totals.bytes += designBytes_(d);
         continue;
       }
-      if (failedNow[key]) continue; // already failed in this pass; tried again in the next pass
+      if (failedNow[key]) {
+        ctx.stuck.push(d); // already failed in this pass; tried again in the next pass
+        continue;
+      }
       if (Date.now() >= ctx.deadline) {
         kind = 'partial';
         break;
@@ -493,6 +528,9 @@ function syncDesigns_(ctx) {
         break;
       }
       try {
+        // asked before processDesign_ replaces the entry: has this design ever been complete in Drive?
+        // (a changed or re-inspected design has; one that only failed so far has not)
+        var known = !!(entry && (entry.sig || entry.at));
         var complete = processDesign_(ctx, d, key, sig);
         consecutiveFails = 0;
         ctx.completed++;
@@ -500,6 +538,9 @@ function syncDesigns_(ctx) {
           ctx.totals.done++;
           ctx.totals.files += d.files.length;
           ctx.totals.bytes += designBytes_(d);
+          if (!known) noteNewDesign_(ctx, d);
+        } else {
+          ctx.stuck.push(d); // left as it is for now (cached index); the next run with the GitHub index decides
         }
         if (ctx.completed % PROGRESS_EVERY === 0) {
           Logger.log('progress: ' + ctx.completed + ' designs copied this run (design ' + (i + 1) + ' of ' + total + '), ' + ctx.stats.created + ' files created, ' + ctx.stats.replaced + ' replaced, ' + fmtBytes_(ctx.stats.bytes) + ', ' + Math.round((Date.now() - ctx.started) / 1000) + ' s');
@@ -507,7 +548,7 @@ function syncDesigns_(ctx) {
       } catch (err) {
         if (err && err.tag === 'QUOTA') {
           ctx.error = errText_(err);
-          Logger.log('sync: daily quota reached (' + ctx.error + '); will continue at the next nightly run.');
+          Logger.log('sync: daily quota reached (' + ctx.error + '); will continue at the next daily run.');
           kind = 'quota';
           break;
         }
@@ -520,6 +561,7 @@ function syncDesigns_(ctx) {
         pass.failed[key] = errText_(err).slice(0, 160);
         ctx.dirty = true;
         ctx.failed++;
+        ctx.stuck.push(d);
         ctx.error = key + ': ' + errText_(err);
         Logger.log('ERROR ' + key + ' (' + d.folder + '): ' + errText_(err));
         consecutiveFails++;
@@ -556,6 +598,17 @@ function syncDesigns_(ctx) {
         }
       }
       if (!kind) kind = total - ctx.totals.done > 0 || ctx.catalogFailed ? 'incomplete' : 'complete'; // "complete" includes a written Catalog
+      if (!st.initialDone && (kind === 'complete' || (kind === 'incomplete' && PropertiesService.getScriptProperties().getProperty('MAIL_DONE')))) {
+        // The first full copy is finished: from now on a design that reaches Drive for the first time is a "new design".
+        // Set here so the same final save keeps it; the designs of the first copy (or of a state rebuilt from Drive) are never reported.
+        // An "incomplete" pass counts too when the completion mail was sent in the past (an install from before this feature, or a
+        // state rebuilt after the first copy): the first copy was done then, so one stuck design must not switch the summaries off.
+        st.initialDone = true;
+        st.news = [];
+        st.newsMore = 0;
+        ctx.firstComplete = true;
+        ctx.dirty = true;
+      }
     }
   } finally {
     // one save at the end (a crash or running out of time loses at most the last few designs)
@@ -573,7 +626,9 @@ function syncDesigns_(ctx) {
 function finish_(ctx, kind) {
   var props = PropertiesService.getScriptProperties();
   var total = ctx.index ? ctx.index.designs.length : 0;
-  var bad = kind === 'failed' || ((kind === 'quota' || kind === 'stalled' || kind === 'incomplete' || (kind === 'partial' && !ctx.catalogDeferred)) && ctx.completed === 0);
+  // A run that ends 'incomplete' (a design is still not in Drive, or the Catalog could not be written) is a failed run even when other
+  // designs were copied that day, so one stuck design cannot hide behind good days: after FAIL_MAIL_AFTER of them in a row the "failing" email goes out.
+  var bad = kind === 'failed' || kind === 'incomplete' || ((kind === 'quota' || kind === 'stalled' || (kind === 'partial' && !ctx.catalogDeferred)) && ctx.completed === 0);
   var streak = parseInt(props.getProperty('FAIL_STREAK') || '0', 10) || 0;
   streak = bad ? streak + 1 : 0;
   var elapsedS = Math.round((Date.now() - ctx.started) / 1000);
@@ -594,7 +649,7 @@ function finish_(ctx, kind) {
     streak: streak,
   };
   if (ctx.index) {
-    Logger.log('sync: ' + kind + ' | ' + ctx.totals.done + '/' + total + ' designs done | this run +' + ctx.completed + ' designs, ' + ctx.stats.created + ' files created, ' + ctx.stats.replaced + ' replaced, ' + ctx.stats.reused + ' already there, ' + ctx.failed + ' failed' + (ctx.kept ? ', ' + ctx.kept + ' left as they are (cached index)' : '') + ' | ' + elapsedS + ' s');
+    Logger.log('sync: ' + kind + ' | ' + ctx.totals.done + '/' + total + ' designs done | this run +' + ctx.completed + ' designs' + (ctx.newDesigns ? ' (' + ctx.newDesigns + ' new)' : '') + ', ' + ctx.stats.created + ' files created, ' + ctx.stats.replaced + ' replaced, ' + ctx.stats.reused + ' already there, ' + ctx.failed + ' failed' + (ctx.kept ? ', ' + ctx.kept + ' left as they are (cached index)' : '') + ' | ' + elapsedS + ' s');
   }
   try {
     props.setProperty('FAIL_STREAK', String(streak));
@@ -630,7 +685,7 @@ function finish_(ctx, kind) {
     } else if (stopped) {
       Logger.log('sync: switched off by stopAll(); nothing more is scheduled. Run setup() to switch it on again.');
     } else if (kind !== 'complete') {
-      Logger.log('sync: no more runs scheduled today; the nightly trigger will pick up from here.');
+      Logger.log('sync: no more runs scheduled today; the daily trigger will pick up from here.');
     }
   } catch (e) {
     Logger.log('sync: could not manage triggers: ' + errText_(e));
@@ -646,18 +701,108 @@ function finish_(ctx, kind) {
         'Pictures: ' + ctx.totals.files + ' (' + fmtBytes_(ctx.totals.bytes) + ')\n\n' +
         'Backup folder: https://drive.google.com/drive/folders/' + ctx.root.getId() + '\n' +
         (catId ? 'Catalog sheet: https://docs.google.com/spreadsheets/d/' + catId + '\n' : '') +
-        '\nIt now re-checks every night (about 3 AM) and copies anything new. No action needed.');
+        '\nIt now re-checks every day (about ' + dailyTimeText_() + ' India time, shortly after the website\'s 1:30 PM publish) and copies anything new.\n' +
+        'On a day when new designs were backed up you get a short email that lists them. No action needed.');
       if (sent) props.setProperty('MAIL_DONE', new Date().toISOString());
+    } else if (kind === 'complete' || kind === 'incomplete' || kind === 'quota' || kind === 'stalled') {
+      // never throws; the first-complete mail above goes out alone. Also sent when the run could not finish everything (one stuck
+      // design must not silence the proof): not after 'partial' (more slices follow), 'stopped' or 'failed'.
+      mailNewDesigns_(ctx, kind);
     }
     if (bad && streak >= FAIL_MAIL_AFTER && !props.getProperty('FAIL_MAILED')) {
       var sentFail = sendMail_('CHD design library backup is failing',
         'The Drive backup has failed ' + streak + ' times in a row.\n\nLast problem: ' + (ctx.error || kind) + '\n\n' +
-        'Open the Apps Script project and run status() or selfTest() for details. It keeps trying every night.');
+        'Open the Apps Script project and run status() or selfTest() for details. It keeps trying every day.');
       if (sentFail) props.setProperty('FAIL_MAILED', new Date().toISOString());
     }
     if (!bad) props.deleteProperty('FAIL_MAILED');
   } catch (e) {
     Logger.log('sync: notification problem: ' + errText_(e));
+  }
+}
+
+/** How a design is named in the "new designs" email: its style number, tidied. */
+function styleLabel_(d) {
+  return String(d.style || d.folder).replace(/\s+/g, ' ').slice(0, 80);
+}
+
+/**
+ * A design has just reached Drive complete for the very first time. After the first full copy it goes on the list for
+ * the "new designs" email. The list lives in the state file, so it survives slices, restarts and a mail that failed.
+ * Before that (the first copy itself, or a state rebuilt from Drive) nothing is listed, so those can never flood.
+ * A design whose pictures were only replaced or updated is not new and never gets here.
+ */
+function noteNewDesign_(ctx, d) {
+  var st = ctx.state;
+  if (!st.initialDone) return;
+  ctx.newDesigns++;
+  if (st.news.length < NEWS_MAX) {
+    st.news.push({ s: styleLabel_(d), c: categoryName_(ctx.index, d) });
+  } else {
+    st.newsMore = (st.newsMore || 0) + 1; // still counted for the email, just not named
+  }
+  ctx.dirty = true;
+}
+
+/** How many designs of the library are in Drive now (a design being updated still counts: its earlier pictures are there). */
+function backedUpCount_(ctx) {
+  var n = 0;
+  ctx.index.designs.forEach(function (d) {
+    var e = ctx.state.designs[keyOf_(d)];
+    if (e && (e.sig || e.at)) n++;
+  });
+  return n;
+}
+
+/**
+ * The last paragraph of the "new designs" email when the run did not get everything done, so that a design that cannot be
+ * copied (or a run that stopped early) is never silent. Empty for a run that completed.
+ */
+function unfinishedNote_(ctx, kind) {
+  if (kind === 'quota') return 'Google\'s daily limit was reached, so this run stopped early. The rest follows at the next daily run.\n\n';
+  if (kind === 'stalled') return 'Several designs in a row could not be copied, so this run stopped early. It tries again at the next daily run.\n\n';
+  if (kind !== 'incomplete') return '';
+  var open = ctx.index.designs.length - ctx.totals.done;
+  if (open <= 0) return 'The Catalog sheet could not be written this time. It is tried again at the next run.\n\n';
+  var names = ctx.stuck.slice(0, 5).map(styleLabel_).join(', ');
+  return open + ' design' + (open === 1 ? '' : 's') + ' could not be copied yet' + (names ? ' (' + names + (open > 5 ? ', ...' : '') + ')' : '') + '. ' +
+    (open === 1 ? 'It is' : 'They are') + ' tried again every day.\n\n';
+}
+
+/**
+ * After a run that completed, or that could not finish everything (a stuck design must not silence the proof), other than the one
+ * that finished the first full copy, which sends its own email: ONE short email naming the designs backed up for the first time
+ * since the last such email. The list is cleared only once the mail was really sent, so a mail that failed is simply sent by the
+ * next such run. Nothing new = no email. Never throws: a mail problem must not change the outcome of a sync.
+ */
+function mailNewDesigns_(ctx, kind) {
+  var st = ctx.state;
+  try {
+    if (!st || ctx.firstComplete || !st.initialDone || !st.news.length) return;
+    var count = st.news.length + (st.newsMore || 0);
+    var lines = st.news.slice(0, NEWS_LIST_MAX).map(function (x) {
+      return '  ' + x.s + (x.c ? ' (' + x.c + ')' : '');
+    });
+    if (count > lines.length) lines.push('  ... and ' + (count - lines.length) + ' more');
+    var catId = PropertiesService.getScriptProperties().getProperty('CATALOG_ID');
+    var sent = sendMail_('CHD design library: ' + count + ' new design' + (count === 1 ? '' : 's') + ' backed up',
+      count + ' new design' + (count === 1 ? ' was' : 's were') + ' copied into the Drive backup since the last summary:\n\n' +
+      lines.join('\n') + '\n\n' +
+      'The backup now holds ' + backedUpCount_(ctx) + ' designs.\n\n' +
+      unfinishedNote_(ctx, kind) +
+      'Backup folder: https://drive.google.com/drive/folders/' + ctx.root.getId() + '\n' +
+      (catId ? 'Catalog sheet: https://docs.google.com/spreadsheets/d/' + catId + '\n' : '') +
+      '\nThis summary only comes on days when new designs were backed up.');
+    if (!sent) {
+      Logger.log('sync: the list of ' + count + ' new design(s) is kept; a later run sends it.');
+      return;
+    }
+    st.news = [];
+    st.newsMore = 0;
+    ctx.dirty = true;
+    saveState_(ctx);
+  } catch (e) {
+    Logger.log('sync: new-designs summary problem: ' + errText_(e));
   }
 }
 
@@ -678,7 +823,9 @@ function processDesign_(ctx, d, key, sig) {
     return findOrCreateFolder_(catFolder, d.folder);
   });
   var have = fo.isNew ? Object.create(null) : listFolder_(fo.folder);
-  var entry = { sig: '', folderId: fo.folder.getId(), at: '', files: {} };
+  var before = st.designs[key];
+  // at = the day the design was last complete; it stays while the design is being redone, so "has this design ever been complete" can be told later
+  var entry = { sig: '', folderId: fo.folder.getId(), at: before && before.at ? before.at : '', files: {} };
   var need = [];
   var leftovers = []; // same-named copies of another size next to a copy of the right size (a run died between saving the new copy and trashing the old one)
   var kept = 0;
@@ -1133,8 +1280,12 @@ function saveId_(key, id, rootId) {
   props.setProperty(key + '_ROOT', rootId);
 }
 
+/**
+ * initialDone: the first full copy has finished (until then no design counts as "new"). news: the designs copied for the first
+ * time since the last "new designs" email, [{s: style, c: category name}] (newsMore = how many more than NEWS_MAX there were).
+ */
 function emptyState_() {
-  return { v: 1, savedAt: '', pass: { id: 0, done: true, failed: {} }, catalogDirty: false, designs: {} };
+  return { v: 1, savedAt: '', pass: { id: 0, done: true, failed: {} }, catalogDirty: false, initialDone: false, news: [], newsMore: 0, designs: {} };
 }
 
 /** Reads _sync-state.json from the root. If it is missing or unreadable the sync converges by inspecting Drive. */
@@ -1149,6 +1300,14 @@ function loadState_(ctx) {
     if (!st || st.v !== 1 || !st.designs || typeof st.designs !== 'object') throw new Error('unexpected format');
     if (!st.pass || typeof st.pass !== 'object') st.pass = { id: 0, done: true, failed: {} };
     if (!st.pass.failed) st.pass.failed = {};
+    // states written before the "new designs" email existed have none of these: they start as "first copy not finished yet"
+    if (typeof st.initialDone !== 'boolean') st.initialDone = false;
+    st.news = Array.isArray(st.news)
+      ? st.news.filter(function (x) {
+          return x && typeof x === 'object' && typeof x.s === 'string';
+        }).slice(0, NEWS_MAX)
+      : [];
+    if (typeof st.newsMore !== 'number' || !(st.newsMore > 0)) st.newsMore = 0;
     return st;
   } catch (e) {
     Logger.log('state: ' + STATE_FILE_NAME + ' is unreadable (' + errText_(e) + '); rebuilding it from Drive.');
@@ -1334,8 +1493,9 @@ function readmeText_(index) {
   L.push('CHD DESIGN LIBRARY - BACKUP IN GOOGLE DRIVE');
   L.push('==========================================');
   L.push('Source : github.com/' + index.repo + ' (branch ' + index.branch + '), website ' + index.siteBase);
-  L.push('Kept up to date every night by the Apps Script "CHD Library Backup". It only adds and');
-  L.push('replaces; it never deletes. Please leave _sync-state.json (its progress file) alone.');
+  L.push('Kept up to date every day by the Apps Script "CHD Library Backup" (about ' + dailyTimeText_() + ' India time, shortly after');
+  L.push('the website\'s 1:30 PM publish). It only adds and replaces; it never deletes. Please leave');
+  L.push('_sync-state.json (its progress file) alone.');
   L.push('');
   L.push('WHAT THIS IS');
   L.push('  Every product design of the Creative Home Decor website library: one folder per');
@@ -1558,17 +1718,25 @@ function deleteTriggers_(handlers) {
   return n;
 }
 
+/** DAILY_HOUR in words for messages: 15 -> "3 PM". */
+function dailyTimeText_() {
+  return (DAILY_HOUR % 12 || 12) + (DAILY_HOUR < 12 ? ' AM' : ' PM');
+}
+
+/**
+ * Leaves exactly ONE daily trigger, at DAILY_HOUR: whatever daily triggers exist (none, several, or at another hour from
+ * an older version) are replaced. The new one is made first, so a failure here never leaves the script without a daily job.
+ */
 function installDailyTrigger_() {
-  var have = ScriptApp.getProjectTriggers().filter(function (t) {
+  var old = ScriptApp.getProjectTriggers().filter(function (t) {
     return t.getHandlerFunction() === 'syncDaily';
   });
-  if (have.length) {
-    Logger.log('Nightly trigger already installed.');
-    for (var i = 1; i < have.length; i++) ScriptApp.deleteTrigger(have[i]);
-    return;
-  }
   ScriptApp.newTrigger('syncDaily').timeBased().everyDays(1).atHour(DAILY_HOUR).create();
-  Logger.log('Nightly trigger installed (about ' + DAILY_HOUR + ' AM, script time zone).');
+  old.forEach(function (t) {
+    ScriptApp.deleteTrigger(t);
+  });
+  PropertiesService.getScriptProperties().setProperty('DAILY_HOUR_SET', String(DAILY_HOUR)); // so a daily run can tell when the trigger is at another hour
+  Logger.log('Daily trigger installed: every day at about ' + dailyTimeText_() + ' (script time zone, India), shortly after the website\'s 1:30 PM publish.' + (old.length ? ' Replaced ' + old.length + ' earlier daily trigger(s).' : ''));
 }
 
 function ownerEmail_() {

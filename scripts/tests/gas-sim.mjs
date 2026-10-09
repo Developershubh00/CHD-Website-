@@ -20,6 +20,11 @@
 //   --seeds=<n>     number of random scenarios in the chaos test F36 (default 6 quick, 24 full)
 //   --gs=<file>     test another copy of the script (used to check that this simulator catches broken variants)
 //
+// The D tests cover the daily trigger (one, at 3 PM India time, corrected by setup() or by a daily run) and the "new
+// designs" summary email (state fields initialDone / news; also sent by a run that could not finish everything, with
+// the stuck design named; a run with a stuck design counts as failed for the "failing" email); D11 runs the same
+// stories on deliberately broken copies of the script to prove those tests can fail.
+//
 // What the mocks can be made to do (beyond plain success): HTTP 429/500/HTML/wrong-size answers and slow or
 // hung requests, Drive and Sheets errors of every kind, Drive search lag, a hard kill of a run at the 6-minute
 // line (state is rolled back to that instant), stopAll() fired from inside a running slice, a manifest with
@@ -602,10 +607,12 @@ function makeSpreadsheetApp(drive) {
       });
     },
     openById(id) {
-      drive.read();
-      const n = drive.nodes.get(id);
-      if (!n || !n.sheets) throw new Error('Exception: Unexpected error while getting the method or property openById on object SpreadsheetApp.');
-      return wrapSS(n);
+      return drive.guard('openSpreadsheet', id, () => {
+        drive.read();
+        const n = drive.nodes.get(id);
+        if (!n || !n.sheets) throw new Error('Exception: Unexpected error while getting the method or property openById on object SpreadsheetApp.');
+        return wrapSS(n);
+      });
     },
   };
 }
@@ -626,6 +633,7 @@ class Sim {
     this.lockHeld = false;
     this.mailFails = false;
     this.effectiveEmailFails = false;
+    this.triggerFault = null; // { handler, times }: creating a trigger for that handler throws that many times
     this.sleeps = [];
     this.build(opts);
   }
@@ -699,6 +707,10 @@ class Sim {
               inTimezone: () => b,
               create() {
                 if (!spec.kind) throw new Error('Exception: trigger needs a schedule');
+                if (sim.triggerFault && sim.triggerFault.handler === handler && sim.triggerFault.times > 0) {
+                  sim.triggerFault.times--;
+                  throw new Error('Exception: Service invoked too many times in a short time: create trigger. Try waiting a few minutes before trying again.');
+                }
                 if (sim.triggers.filter((t) => !t.deleted).length >= 20) throw new Error('Exception: This script has too many triggers. Triggers must be deleted from the script before more can be added.');
                 spec.id = 'trg' + ++sim.tseq;
                 spec.api = {
@@ -868,10 +880,10 @@ class Sim {
   liveTriggers() {
     return this.triggers.filter((t) => !t.deleted);
   }
-  addTrigger(handler, kind = 'after', delay = 60000) {
+  addTrigger(handler, kind = 'after', delay = 60000, hour = 3) {
     const b = vm.runInContext(`ScriptApp.newTrigger(${JSON.stringify(handler)}).timeBased()`, this.ctx);
     if (kind === 'after') b.after(delay);
-    else b.everyDays(1).atHour(3);
+    else b.everyDays(1).atHour(hour);
     return b.create();
   }
 
@@ -1257,8 +1269,8 @@ test(`E1 full multi-run sync via setup() (${BIG_INDEX.designs.length} designs): 
   const runsAfterSetup = sim.syncTriggers().length;
   t.eq(runsAfterSetup, 1, 'exactly one continuation trigger after the first slice');
   const daily = sim.liveTriggers().filter((x) => x.handler === 'syncDaily');
-  t.eq(daily.length, 1, 'nightly trigger count');
-  t.eq(daily[0] && daily[0].hour, 3, 'nightly trigger hour');
+  t.eq(daily.length, 1, 'daily trigger count');
+  t.eq(daily[0] && daily[0].hour, 15, 'daily trigger hour (3 PM India time, about 90 minutes after the 1:30 PM publish)');
   const budgetS = sim.getVar('TIME_BUDGET_MS') / 1000;
   const first = sim.runs[0].secs;
   t.ok(first <= budgetS + 60 && first >= budgetS - 20, `first slice used ${first.toFixed(0)} s (expected to stop near the ${budgetS} s budget)`);
@@ -1269,7 +1281,7 @@ test(`E1 full multi-run sync via setup() (${BIG_INDEX.designs.length} designs): 
   t.eq(sim.runs.filter((x) => x.error).length, 0, 'runs that threw');
   maxElapsedOk(t, sim, 'E1');
   t.eq(sim.syncTriggers().length, 0, 'continuation triggers left after completion');
-  t.eq(sim.liveTriggers().length, 1, 'only the nightly trigger remains');
+  t.eq(sim.liveTriggers().length, 1, 'only the daily trigger remains');
   t.ok(sim.world.maxBatch <= 8 && sim.world.maxBatch >= 2, 'fetchAll batch size was ' + sim.world.maxBatch);
   t.eq(sim.world.unmuted, 0, 'fetches without muteHttpExceptions that failed');
   const wantFiles = BIG_INDEX.designs.reduce((n, x) => n + x.files.length, 0);
@@ -1293,6 +1305,8 @@ test(`E1 full multi-run sync via setup() (${BIG_INDEX.designs.length} designs): 
   t.eq(mails.length, 1, 'completion emails');
   t.ok(mails[0] && mails[0].to === EMAIL && mails[0].body.includes(root.id) && mails[0].body.includes(`${BIG_INDEX.designs.length} of ${BIG_INDEX.designs.length}`), 'completion email content');
   t.eq(sim.mails.length, 1, 'total emails');
+  const st1 = sim.readState(root.id);
+  t.eq([st1.v, st1.initialDone, st1.news, st1.newsMore], [1, true, [], 0], 'state after the first full copy: initialDone is set and no design is listed as new (no flood)');
   t.ok(!sim.logs.some((l) => /^ERROR/.test(l)), 'ERROR lines in the log: ' + sim.logs.filter((l) => /^ERROR/.test(l)).slice(0, 2).join(' | '));
   const perRun = sim.logs.map((l) => /^sync: \w+ \| .* this run \+(\d+) designs/.exec(l)).filter(Boolean).map((m) => Math.floor(Number(m[1]) / 25));
   t.eq(sim.logs.filter((l) => /^progress:/.test(l)).length, perRun.reduce((a, b) => a + b, 0), 'progress lines (one per 25 designs copied in a run)');
@@ -1422,6 +1436,10 @@ test('E5 a newly appended design: only its files (and folder) are created', (t) 
   t.eq(rows.length, idx.designs.length + 1, 'catalog rows');
   t.eq(rows[rows.length - 1][5], ' =COTTON', 'a spec starting with "=" is stored as text, not as a formula');
   t.eq(sim.catalogNode(sim.rootNode().id).sheets[0].formulas, 0, 'formula cells in the catalog');
+  const sums = x.mails.filter((mm) => /new design/.test(mm.subject));
+  t.eq(x.mails.length, 1, 'mails that day (just the summary)');
+  t.ok(sums.length === 1 && sums[0].subject === 'CHD design library: 1 new design backed up' && sums[0].body.includes('  CHD-TEST-9001 (new) (Cushions)') && sums[0].body.includes(`The backup now holds ${idx.designs.length} designs.`), 'summary mail for the one new design: ' + JSON.stringify(sums[0] && [sums[0].subject, sums[0].body]));
+  t.eq(sim.readState(sim.rootNode().id).news, [], 'list cleared after the mail');
   big.index = clone(idx);
 });
 
@@ -1454,6 +1472,9 @@ test('E6 state file deleted: converges from Drive without duplicating files', (t
   const sorted = (o) => JSON.stringify(Object.entries(o).sort());
   for (const [k, v] of Object.entries(JSON.parse(before))) if (sorted(v.files) !== sorted(after[k].files) || v.folderId !== after[k].folderId) diff++;
   t.eq(diff, 0, 'designs whose file ids differ from before (would mean re-created files)');
+  t.eq(x.mails.length, 0, 'mails after the state was rebuilt from Drive (every design is "unknown" to the new state, none may be announced as new)');
+  const rebuilt = sim.readState(root.id);
+  t.eq([rebuilt.initialDone, rebuilt.news, rebuilt.newsMore], [true, [], 0], 'rebuilt state: copy counted as done again, nothing listed');
   maxElapsedOk(t, sim, 'E6');
   console.log(`        state-less recovery: ${x.reads} Drive reads, ${x.writes} Drive writes`);
 });
@@ -1624,9 +1645,10 @@ test('F7 lock contention: second run exits quietly (no fetch, no Drive call, no 
   t.eq(sim2.lockHeld, false, 'lock released after a failed run');
 });
 
-test('F8 continuation triggers: stale ones are cleaned, exactly one is left mid-way, none at the end; nightly one untouched', (t) => {
+test('F8 continuation triggers: stale ones are cleaned, exactly one is left mid-way, none at the end; the daily one untouched', (t) => {
   const sim = newSim(SMALL_INDEX, { vars: { TIME_BUDGET_MS: 30000 } });
-  const daily = sim.addTrigger('syncDaily', 'daily');
+  const daily = sim.addTrigger('syncDaily', 'daily', 0, 15);
+  sim.props.set('DAILY_HOUR_SET', '15'); // as setup() leaves it: the daily run then has nothing to correct (D12 covers the case where it does)
   for (let i = 0; i < 4; i++) {
     sim.addTrigger('sync', 'after', 60000);
     sim.triggers[sim.triggers.length - 1].fired = i < 3; // three already fired (never auto-removed), one still pending
@@ -1636,10 +1658,10 @@ test('F8 continuation triggers: stale ones are cleaned, exactly one is left mid-
   t.ok(!r.error, 'threw');
   t.eq(sim.syncTriggers().length, 1, 'continuation triggers after a partial slice');
   t.eq(sim.syncTriggers()[0].delay, 60000, 'continuation delay');
-  t.ok(sim.liveTriggers().includes(sim.triggers.find((x) => x.api === daily)), 'nightly trigger kept');
+  t.ok(sim.liveTriggers().includes(sim.triggers.find((x) => x.api === daily)), 'daily trigger kept');
   sim.drain();
   t.eq(sim.syncTriggers().length, 0, 'continuation triggers left at the end');
-  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'nightly trigger count');
+  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'daily trigger count');
   t.ok(sim.runs.length >= 3, 'expected several slices with a 30 s budget, got ' + sim.runs.length);
   t.list(verifyDrive(sim, SMALL_INDEX), 'drive');
   t.eq(mailsTo(sim, /complete/).length, 1, 'completion mails over all slices');
@@ -1650,7 +1672,7 @@ test('F8 continuation triggers: stale ones are cleaned, exactly one is left mid-
 test('F9 stopAll removes every trigger the script created (and nothing else breaks)', (t) => {
   const sim = newSim(SMALL_INDEX, { vars: { TIME_BUDGET_MS: 30000 } });
   sim.exec('setup');
-  t.ok(sim.liveTriggers().length >= 2, 'precondition: nightly + continuation, have ' + sim.liveTriggers().map((x) => x.handler));
+  t.ok(sim.liveTriggers().length >= 2, 'precondition: daily + continuation, have ' + sim.liveTriggers().map((x) => x.handler));
   const r = sim.exec('stopAll');
   t.ok(!r.error, 'threw');
   t.eq(sim.liveTriggers().length, 0, 'triggers left');
@@ -1660,7 +1682,7 @@ test('F9 stopAll removes every trigger the script created (and nothing else brea
   t.eq(sim.liveTriggers().length, 0, 'second stopAll');
   sim.exec('setup');
   t.eq(sim.props.has('STOPPED'), false, 'setup() clears the stop flag');
-  t.ok(sim.liveTriggers().some((x) => x.handler === 'syncDaily'), 'setup() installs the nightly trigger again');
+  t.ok(sim.liveTriggers().some((x) => x.handler === 'syncDaily'), 'setup() installs the daily trigger again');
 });
 
 test('F10 daily quota errors stop cleanly (no continuation, no hammering) and resume the next day', (t) => {
@@ -1674,7 +1696,7 @@ test('F10 daily quota errors stop cleanly (no continuation, no hammering) and re
   t.ok(sim.logs.some((l) => /daily quota reached/.test(l)), 'clear log line');
   const st = sim.readState(sim.rootNode().id);
   t.ok(Object.values(st.designs).filter((e) => e.sig).length >= 1, 'progress saved before stopping');
-  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'nightly trigger still there');
+  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'daily trigger still there');
   sim.world.clearRules();
   sim.nextDay();
   sim.exec('syncDaily');
@@ -1716,7 +1738,7 @@ test('F11 failures: backoff retries, ONE "failing" email after 3 failed runs, no
   t.eq(mailsTo(sim, /complete/).length, 1, 'completion mail');
   t.eq(sim.props.get('FAIL_STREAK'), '0', 'failure streak reset');
   t.eq(sim.props.has('FAIL_MAILED'), false, 'failure-mail flag reset');
-  // a persistent per-design failure also ends up in a mail after 3 nightly runs, but only once
+  // a persistent per-design failure also ends up in a mail after 3 daily runs, but only once
   const sim2 = newSim();
   const dd = SMALL_INDEX.designs[2];
   sim2.world.inject({ kind: 'file', mode: '404', match: (rel) => rel.includes(`/slide_${pad3(dd.slide)}/`) && rel.includes(`/${dd.dir}/`) });
@@ -1771,7 +1793,7 @@ test('F13 root folder: ROOT_FOLDER_ID is honoured; otherwise find-or-create by n
   sim2.exec('setup');
   sim2.drain();
   t.eq(sim2.rootNode() && sim2.rootNode().id, id1, 'root folder reused (not duplicated)');
-  t.eq(sim2.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'nightly triggers after two setups');
+  t.eq(sim2.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'daily triggers after two setups');
   // moving to another root later: everything (state, catalog) is created there, the old root is left alone
   const sim4 = newSim();
   sim4.exec('setup');
@@ -1991,7 +2013,7 @@ test('F23 recovery after an interrupted slice: second slice picks up from the sa
   t.list(verifyDrive(sim, idx), 'drive');
 });
 
-test('F24 a design that failed in an unfinished pass is retried on a later night (pass bookkeeping is persisted)', (t) => {
+test('F24 a design that failed in an unfinished pass is retried on a later day (pass bookkeeping is persisted)', (t) => {
   const idx = SMALL_INDEX;
   const x = idx.designs[2];
   const sim = newSim();
@@ -2058,7 +2080,7 @@ test('F9b stopAll() while a slice is running: that slice ends after its current 
   t.ok(!r.error, 'threw');
   t.ok(stopT > 0, 'the hook never fired (the slice was too short)');
   t.eq(sim.props.has('STOPPED'), true, 'stop flag');
-  t.eq(sim.liveTriggers().map((x) => x.handler), [], 'triggers left (no continuation, no nightly job, no safety trigger)');
+  t.eq(sim.liveTriggers().map((x) => x.handler), [], 'triggers left (no continuation, no daily job, no safety trigger)');
   t.eq(sim.drain(), 0, 'runs that still fire');
   t.ok(sim.world.files().length < totalFiles(idx), 'the slice should have ended before copying everything');
   t.ok(sim.clock.now() - stopT <= sim.getVar('STOP_CHECK_MS') + 40000, `the slice kept running ${(sim.clock.now() - stopT) / 1000} s after stopAll`);
@@ -2087,7 +2109,7 @@ test('F9b stopAll() while a slice is running: that slice ends after its current 
   t.eq(sim.props.has('STOPPED'), false, 'stop flag cleared by setup()');
   t.list(verifyDrive(sim, idx), 'drive after setup()');
   t.eq(mailsTo(sim, /complete/).length, 1, 'completion mail');
-  t.eq(sim.liveTriggers().map((x) => x.handler), ['syncDaily'], 'only the nightly trigger at the end');
+  t.eq(sim.liveTriggers().map((x) => x.handler), ['syncDaily'], 'only the daily trigger at the end');
 });
 
 test('F9c stopAll() arriving after the copy loop has looked for it for the last time still leaves no continuation behind', (t) => {
@@ -2107,7 +2129,7 @@ test('F9c stopAll() arriving after the copy loop has looked for it for the last 
   t.eq(sim.drain(), 0, 'runs that still fire');
 });
 
-test('F25 a slice killed by Google (a request hangs past the 6-minute limit) is restarted by the safety trigger, not by tomorrow night', (t) => {
+test('F25 a slice killed by Google (a request hangs past the 6-minute limit) is restarted by the safety trigger, not by tomorrow\'s daily run', (t) => {
   const idx = pickSubset(FULL_INDEX, 30);
   const sim = newSim(idx); // default 270 s budget
   sim.addTrigger('syncDaily', 'daily');
@@ -2118,14 +2140,14 @@ test('F25 a slice killed by Google (a request hangs past the 6-minute limit) is 
   const pending = sim.syncTriggers().filter((x) => !x.fired);
   t.eq(pending.length, 1, 'safety trigger left behind by the killed run');
   t.eq(pending[0] && pending[0].delay, sim.getVar('SAFETY_AFTER_MS'), 'its delay');
-  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'nightly trigger kept');
+  t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, 'daily trigger kept');
   t.eq(sim.lockHeld, false, 'lock of the dead run');
   t.eq(sim.mails.length, 0, 'mails after a killed run');
   const killedAt = sim.clock.now();
   t.eq(sim.drain() >= 1, true, 'the safety trigger fires');
   t.eq(sim.syncTriggers().length, 0, 'triggers left at the end');
   t.ok(sim.clock.now() - killedAt < 3 * 3600 * 1000, 'restart came after ' + (sim.clock.now() - killedAt) / 60000 + ' fake minutes');
-  t.ok(sim.clock.now() - t0 < 12 * 3600 * 1000, 'the copy was done long before the next nightly run');
+  t.ok(sim.clock.now() - t0 < 12 * 3600 * 1000, 'the copy was done long before the next daily run');
   t.list(verifyDrive(sim, idx), 'drive after the restart (no duplicates, nothing missing)');
   t.list(verifyState(sim, idx), 'state');
   t.list(verifyCatalog(sim, idx), 'catalog');
@@ -2264,7 +2286,7 @@ test('F30 the Catalog ends up inside the backup folder even if moving it fails; 
   runToCompletion(sim);
   t.ok(sim.catalogNode(sim.rootNode().id), 'Catalog in the root');
   t.eq(spreadsheets(sim).length, 1, 'spreadsheets');
-  // (b) a failure that is not retried: this run cannot finish, the next night completes the job without a second sheet
+  // (b) a failure that is not retried: this run cannot finish, the next day completes the job without a second sheet
   const sim2 = newSim();
   sim2.drive.inject({ op: 'moveTo', times: 1, error: 'Exception: Something odd happened' });
   sim2.exec('setup');
@@ -2277,7 +2299,7 @@ test('F30 the Catalog ends up inside the backup folder even if moving it fails; 
   sim2.nextDay();
   sim2.exec('syncDaily');
   sim2.drain();
-  t.eq(spreadsheets(sim2).length, 1, 'spreadsheets after the next night');
+  t.eq(spreadsheets(sim2).length, 1, 'spreadsheets after the next day');
   t.list(verifyCatalog(sim2, SMALL_INDEX), 'catalog');
   t.eq(mailsTo(sim2, /complete/).length, 1, 'completion mail once the Catalog is in place');
   t.list(verifyDrive(sim2, SMALL_INDEX), 'drive');
@@ -2340,7 +2362,7 @@ test('F32 the downloaded index cannot redirect downloads: repo, branch and site 
   t.ok(rows.slice(1).every((r) => r[15] === '' || r[15].startsWith('https://www.creativehomedecorllp.com/images/')), 'website image URLs');
 });
 
-test('F33 README.txt: written once, an existing one is kept, no Drive call on a quiet night, never rewritten', (t) => {
+test('F33 README.txt: written once, an existing one is kept, no Drive call on a quiet day, never rewritten', (t) => {
   const sim = newSim();
   runToCompletion(sim);
   const root = sim.rootNode();
@@ -2351,7 +2373,7 @@ test('F33 README.txt: written once, an existing one is kept, no Drive call on a 
   sim.nextDay();
   const m = sim.mark();
   sim.exec('syncDaily');
-  t.eq(sim.since(m).writes, 0, 'Drive writes on a quiet night');
+  t.eq(sim.since(m).writes, 0, 'Drive writes on a quiet day');
   t.eq(readme.text.toString('utf8'), 'my own notes', 'edited README.txt overwritten');
   readme.trashed = true; // the owner deletes it: it is not forced back
   sim.nextDay();
@@ -2460,17 +2482,17 @@ test(`F36 chaos (${SEEDS} seeds): random kills, stops, Drive and network faults 
       }
       t.ok(sim.liveTriggers().filter((x) => x.handler === 'sync').length <= 1, `seed ${seed} ${when}: more than one sync trigger`);
     };
-    for (let night = 0; night < 6; night++) {
+    for (let day = 0; day < 6; day++) {
       sim.world.clearRules();
       sim.drive.faults.length = 0;
       sim.world.indexBySrc = {};
-      // the library changes during the night: a picture gets other bytes (so there is real work on most nights)
+      // the library changes during the day: a picture gets other bytes (so there is real work on most days)
       const before = clone(sim.world.index);
-      if (night > 0 && rnd() < 0.8) {
+      if (day > 0 && rnd() < 0.8) {
         for (let k = 0; k < 1 + Math.floor(rnd() * 3); k++) {
           const d = pick(sim.world.index.designs);
           const f = pick(d.files);
-          const b = Buffer.alloc(1500 + Math.floor(rnd() * 4000), (seed + night + k) & 255);
+          const b = Buffer.alloc(1500 + Math.floor(rnd() * 4000), (seed + day + k) & 255);
           sim.world.overrides.set(relOf(d, f.name), b);
           f.bytes = b.length;
           allow(d, f);
@@ -2491,17 +2513,17 @@ test(`F36 chaos (${SEEDS} seeds): random kills, stops, Drive and network faults 
           }
         };
       }
-      const r = sim.exec(night === 0 ? 'setup' : 'syncDaily', kill ? { killAfterS: kill } : {});
+      const r = sim.exec(day === 0 ? 'setup' : 'syncDaily', kill ? { killAfterS: kill } : {});
       sim.world.onFetchAll = null;
       runs++;
       if (r.killed) kills++;
-      t.ok(!r.error, `seed ${seed} night ${night}: run threw ${r.error && r.error.message}`);
+      t.ok(!r.error, `seed ${seed} day ${day}: run threw ${r.error && r.error.message}`);
       try {
         sim.drain(60);
       } catch (e) {
-        t.ok(false, `seed ${seed} night ${night}: ${e.message}`);
+        t.ok(false, `seed ${seed} day ${day}: ${e.message}`);
       }
-      check(`night ${night}`, false);
+      check(`day ${day}`, false);
       if (sim.props.has('STOPPED') && rnd() < 0.5) sim.exec('setup');
       sim.nextDay();
     }
@@ -2523,12 +2545,910 @@ test(`F36 chaos (${SEEDS} seeds): random kills, stops, Drive and network faults 
     t.list(verifyState(sim, sim.world.index), `seed ${seed}: state`);
     t.list(verifyCatalog(sim, sim.world.index), `seed ${seed}: catalog`);
     t.eq(sim.syncTriggers().length, 0, `seed ${seed}: continuation triggers left`);
-    t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, `seed ${seed}: nightly triggers`);
+    t.eq(sim.liveTriggers().filter((x) => x.handler === 'syncDaily').length, 1, `seed ${seed}: daily triggers`);
     t.eq(mailsTo(sim, /complete/).length, 1, `seed ${seed}: completion mails`);
+    t.eq(mailsTo(sim, /new design/).length, 0, `seed ${seed}: "new designs" mails (the chaos only changes pictures of existing designs, so no design may ever be announced as new)`);
     t.eq(liveNamed(sim, 'README.txt').length, 1, `seed ${seed}: README.txt files`);
     t.eq(liveNamed(sim, '_sync-state.json').length, 1, `seed ${seed}: state files`);
   }
   console.log(`        ${seeds} seeds, ${runs} runs, ${kills} killed, ${stops} stopAll during a slice`);
+});
+
+// ------------------------------------------------------------------ daily schedule (3 PM) and the "new designs" email
+/** Appends `count` brand-new designs (small random pictures) to the library the fake internet serves. Returns them. */
+function addNewDesigns(sim, count, { cat = 'rugs', prefix = 'CHD-RG-', styles = null, files = 2, size = 1500 } = {}) {
+  const idx = sim.world.index;
+  const category = idx.categories.find((c) => c.id === cat);
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    sim.newSeq = (sim.newSeq || 0) + 1;
+    const style = styles ? styles[i] : prefix + (9000 + sim.newSeq);
+    const slide = Math.max(0, ...idx.designs.filter((x) => x.dir === category.dir).map((x) => x.slide)) + 1;
+    const fl = ['lifestyle.png', 'image_01.jpg', 'image_02.jpg', 'back.png'].slice(0, files).map((name, k) => ({ name, b: crypto.randomBytes(size + k * 97 + sim.newSeq) }));
+    const nd = {
+      cat: category.id, dir: category.dir, slide, style,
+      folder: style.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, ''),
+      specs: { styleNumber: style, description: 'TEST DESIGN', technique: 'WOVEN' },
+      files: fl.map((f) => ({ name: f.name, bytes: f.b.length })),
+    };
+    for (const f of fl) sim.world.overrides.set(relOf(nd, f.name), f.b);
+    idx.designs.push(nd);
+    out.push(nd);
+  }
+  idx.count = idx.designs.length;
+  return out;
+}
+const isOneOf = (designs) => (rel) => designs.some((nd) => rel.includes(`/${nd.dir}/slide_${pad3(nd.slide)}/`));
+const summariesOf = (sim) => mailsTo(sim, /new design/);
+const listedIn = (mail) => mail.body.split('\n').filter((l) => /^ {2}\S/.test(l)); // the indented lines = the list of designs
+/** Rewrites the saved state file the way an older version (or a damaged file) would have left it. */
+function rewriteState(sim, change) {
+  const node = sim.stateNode(sim.rootNode().id);
+  const st = JSON.parse(node.text.toString('utf8'));
+  change(st);
+  node.text = Buffer.from(JSON.stringify(st), 'utf8');
+  node.size = node.text.length;
+}
+
+test('static: every mention says "daily / about 3 PM" (no "night" or "3 AM" left in the script)', (t) => {
+  const left = GS_SRC.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => /night|3 AM|tonight/i.test(l));
+  t.eq(left.map(([i, l]) => `${i}: ${l.trim().slice(0, 70)}`), [], 'lines that still say night / 3 AM');
+  t.ok(/var DAILY_HOUR = 15;/.test(GS_SRC), 'DAILY_HOUR is 15 (3 PM India time, ~90 minutes after the 1:30 PM publish)');
+  t.ok(/syncDaily/.test(GS_SRC) && /function syncDaily\(\)/.test(GS_SRC), 'the trigger handler is still called syncDaily');
+  t.ok(/shortly after the website's 1:30 PM publish/.test(GS_SRC), 'header says why 3 PM');
+});
+
+test('D1 the daily trigger: exactly one, at 15:00; setup() again (or over an old 3 AM trigger and duplicates) always leaves one at the current hour', (t) => {
+  const sim = newSim();
+  t.eq(sim.getVar('DAILY_HOUR'), 15, 'DAILY_HOUR');
+  const r = sim.exec('setup');
+  t.ok(!r.error, 'setup() threw');
+  sim.drain();
+  const daily = () => sim.liveTriggers().filter((x) => x.handler === 'syncDaily');
+  t.eq(daily().map((x) => [x.kind, x.hour]), [['daily', 15]], 'daily triggers after setup()');
+  t.eq(sim.liveTriggers().map((x) => x.handler), ['syncDaily'], 'all live triggers (no continuation left)');
+  t.ok(sim.logs.some((l) => /^Daily trigger installed: every day at about 3 PM/.test(l)), 'setup() says 3 PM');
+  const firstId = daily()[0].id;
+  sim.exec('setup');
+  sim.drain();
+  sim.exec('setup');
+  sim.drain();
+  t.eq(daily().map((x) => x.hour), [15], 'daily triggers after setup() three times');
+  t.ok(daily()[0].id !== firstId, 're-running setup() replaces the trigger (so it is always corrected)');
+  t.eq(sim.triggers.filter((x) => x.handler === 'syncDaily' && !x.deleted).length, 1, 'live daily triggers');
+  // an older install (3 AM) and a doubled-up trigger are both replaced by one at 15:00
+  const old = newSim();
+  old.addTrigger('syncDaily', 'daily');
+  old.addTrigger('syncDaily', 'daily');
+  old.addTrigger('syncDaily', 'daily', 0, 9);
+  t.eq(old.liveTriggers().map((x) => x.hour), [3, 3, 9], 'precondition: stale daily triggers');
+  old.exec('setup');
+  old.drain();
+  t.eq(old.liveTriggers().map((x) => [x.handler, x.hour]), [['syncDaily', 15]], 'triggers after setup() over stale ones');
+  t.ok(old.logs.some((l) => /Replaced 3 earlier daily trigger\(s\)/.test(l)), 'the log says what was replaced');
+  // Google refuses to create the new trigger: setup() says so, and the old daily job is still there (the new one is made BEFORE the old ones go)
+  const flaky = newSim();
+  flaky.addTrigger('syncDaily', 'daily');
+  flaky.triggerFault = { handler: 'syncDaily', times: 1 };
+  const rf = flaky.exec('setup');
+  t.ok(rf.error && /too many times/.test(String(rf.error.message || rf.error)), 'setup() surfaces the trigger error: ' + (rf.error && rf.error.message));
+  t.eq(flaky.liveTriggers().map((x) => [x.handler, x.hour]), [['syncDaily', 3]], 'the old daily trigger is still live after the failed re-install');
+  t.eq(flaky.props.has('DAILY_HOUR_SET'), false, 'the move is not recorded when it did not happen');
+  flaky.exec('setup');
+  flaky.drain();
+  t.eq(flaky.liveTriggers().map((x) => [x.handler, x.hour]), [['syncDaily', 15]], 'setup() again finishes the move');
+  // a changed DAILY_HOUR is applied by running setup() again; the wording follows it
+  old.setVar('DAILY_HOUR', 9);
+  old.exec('setup');
+  old.drain();
+  t.eq(old.liveTriggers().map((x) => x.hour), [9], 'hour after changing DAILY_HOUR and running setup()');
+  t.ok(old.logs.some((l) => /every day at about 9 AM/.test(l)), 'wording follows DAILY_HOUR');
+  t.eq([0, 9, 12, 15, 23].map((h) => (old.setVar('DAILY_HOUR', h), old.getVar('dailyTimeText_()'))), ['12 AM', '9 AM', '12 PM', '3 PM', '11 PM'], 'dailyTimeText_');
+  // the texts that reach the owner say daily / 3 PM
+  const sim2 = newSim();
+  runToCompletion(sim2);
+  const done = mailsTo(sim2, /complete/)[0];
+  t.ok(done && /every day \(about 3 PM India time, shortly after the website's 1:30 PM publish\)/.test(done.body) && !/night|3 AM/i.test(done.body), 'completion email wording: ' + (done && done.body.split('\n').slice(-3).join(' / ')));
+  const readme = sim2.drive.liveChildren(sim2.rootNode().id, 'file').find((n) => n.name === 'README.txt');
+  const rt = readme.text.toString('utf8');
+  t.ok(/Kept up to date every day .*\(about 3 PM India time, shortly after\nthe website's 1:30 PM publish\)/.test(rt) && !/night|3 AM/i.test(rt), 'README.txt wording');
+  // a failing-backup mail says "every day" too
+  const sim3 = newSim();
+  sim3.world.inject({ kind: 'index', mode: '500' });
+  sim3.exec('syncDaily');
+  sim3.drain();
+  const fail = mailsTo(sim3, /failing/)[0];
+  t.ok(fail && /keeps trying every day/.test(fail.body), 'failing mail wording');
+});
+
+test('D2 the first full copy sends ONLY the "complete" email (also over many slices); nothing is listed as new while it runs', (t) => {
+  for (const budget of [270000, 30000]) {
+    const sim = newSim(SMALL_INDEX, { vars: { TIME_BUDGET_MS: budget } });
+    sim.exec('setup');
+    if (budget < 270000) {
+      const mid = sim.readState(sim.rootNode().id);
+      t.eq([mid.initialDone, mid.news], [false, []], `[${budget}] state in the middle of the first copy`);
+      t.eq(sim.syncTriggers().length, 1, `[${budget}] first slice leaves a continuation`);
+    }
+    sim.drain();
+    if (budget < 270000) t.ok(sim.runs.length >= 3, `[${budget}] several slices, got ${sim.runs.length}`);
+    t.eq(sim.mails.map((x) => x.subject), ['CHD design library backup is complete'], `[${budget}] mails over the whole first copy`);
+    const st = sim.readState(sim.rootNode().id);
+    t.eq([st.v, st.initialDone, st.news, st.newsMore], [1, true, [], 0], `[${budget}] state after the first copy`);
+    t.list(verifyDrive(sim, SMALL_INDEX), `[${budget}] drive`);
+    sim.nextDay();
+    sim.exec('syncDaily');
+    t.eq(sim.mails.length, 1, `[${budget}] mails after a quiet day`);
+  }
+  // the first-complete email could not be sent: it is retried alone, a design that arrives meanwhile is announced afterwards
+  const sim = newSim();
+  sim.mailFails = true;
+  runToCompletion(sim);
+  t.eq(sim.mails.length, 0, 'precondition: the completion mail failed');
+  addNewDesigns(sim, 1);
+  sim.mailFails = false;
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(sim.mails.map((x) => x.subject), ['CHD design library backup is complete'], 'the retry day sends only the completion email');
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(sim.mails.map((x) => x.subject), ['CHD design library backup is complete', 'CHD design library: 1 new design backed up'], 'the next day announces the design that arrived in between');
+});
+
+test('D3 a day with new designs: exactly ONE summary with their style numbers, categories and the right totals; the next day sends nothing', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const root = sim.rootNode();
+  t.eq(sim.mails.length, 1, 'mails after the first copy');
+  const idx = sim.world.index;
+  const before = idx.designs.length;
+  addNewDesigns(sim, 1, { cat: 'rugs', styles: ['CHD-RG-3172'] });
+  addNewDesigns(sim, 1, { cat: 'cushions', styles: ['CHD-CU-4410 (A)'], files: 3 });
+  sim.nextDay();
+  const m = sim.mark();
+  const r = sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.ok(!r.error, 'threw');
+  t.eq(x.mails.length, 1, 'mails that day');
+  const mail = x.mails[0] || { subject: '', body: '', to: '' };
+  t.eq(mail.subject, 'CHD design library: 2 new designs backed up', 'subject');
+  t.eq(mail.to, EMAIL, 'recipient');
+  t.eq(listedIn(mail), ['  CHD-RG-3172 (Rugs)', '  CHD-CU-4410 (A) (Cushions)'], 'designs listed');
+  t.ok(mail.body.includes(`The backup now holds ${before + 2} designs.`), 'total designs in the backup');
+  t.ok(mail.body.includes(`Backup folder: https://drive.google.com/drive/folders/${root.id}`), 'Drive folder link');
+  t.ok(mail.body.includes(`Catalog sheet: https://docs.google.com/spreadsheets/d/${sim.catalogNode(root.id).id}`), 'Catalog link');
+  t.ok(mail.body.length < 700 && !/<[a-z]/i.test(mail.body) && !/night|3 AM/i.test(mail.body), 'short plain text (' + mail.body.length + ' characters)');
+  t.ok(x.logs.some((l) => /^sync: complete \| .* this run \+2 designs \(2 new\), /.test(l)), 'the log line counts them: ' + x.logs.filter((l) => /^sync:/.test(l)).join(' | '));
+  const st = sim.readState(root.id);
+  t.eq([st.initialDone, st.news, st.newsMore], [true, [], 0], 'list cleared after the mail');
+  t.list(verifyDrive(sim, idx), 'drive');
+  t.list(verifyState(sim, idx), 'state');
+  t.list(verifyCatalog(sim, idx), 'catalog');
+  // the next day: nothing new, no mail, not even a state write
+  sim.nextDay();
+  const m2 = sim.mark();
+  sim.exec('syncDaily');
+  const y = sim.since(m2);
+  t.eq([y.mails.length, y.writes], [0, 0], 'mails / Drive writes on the following quiet day');
+  // one design the day after: a new summary for just that one (the earlier two are not repeated)
+  addNewDesigns(sim, 1, { cat: 'throws', styles: ['CHD-TH-5001'] });
+  sim.nextDay();
+  const m3 = sim.mark();
+  sim.exec('syncDaily');
+  const z = sim.since(m3);
+  t.eq(z.mails.map((e) => e.subject), ['CHD design library: 1 new design backed up'], 'singular subject');
+  t.eq(listedIn(z.mails[0]), ['  CHD-TH-5001 (Throws)'], 'only the newest design');
+  t.ok(z.mails[0].body.includes('1 new design was copied'), 'singular wording');
+  t.eq(mailsTo(sim, /complete/).length, 1, 'still one completion mail');
+});
+
+test('D4 a summary mail that cannot be sent keeps the list, the next run retries it, and a mail problem never fails or changes the sync', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  addNewDesigns(sim, 2, { styles: ['CHD-RG-7001', 'CHD-RG-7002'] });
+  sim.mailFails = true;
+  sim.nextDay();
+  const r = sim.exec('syncDaily');
+  t.ok(!r.error, 'threw');
+  const prog = JSON.parse(sim.props.get('PROGRESS'));
+  t.eq([prog.kind, prog.pending, prog.failed], ['complete', 0, 0], 'the sync itself is unchanged');
+  t.eq(sim.props.get('FAIL_STREAK'), '0', 'a mail problem is not a failed run');
+  t.eq(sim.mails.length, 1, 'no new mail went out');
+  t.list(verifyDrive(sim, idx), 'drive');
+  t.eq(sim.readState(sim.rootNode().id).news.map((n) => n.s), ['CHD-RG-7001', 'CHD-RG-7002'], 'list kept in the state file');
+  t.ok(sim.logs.some((l) => /list of 2 new design\(s\) is kept/.test(l)), 'the log says it is kept');
+  // mail still broken the next day and another design arrives: the list grows
+  addNewDesigns(sim, 1, { styles: ['CHD-RG-7003'] });
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(sim.readState(sim.rootNode().id).news.length, 3, 'list after a second failed day');
+  // no recipient address at all behaves the same way
+  sim.mailFails = false;
+  sim.effectiveEmailFails = true;
+  sim.drive.ownerFails = true;
+  sim.nextDay();
+  const r2 = sim.exec('syncDaily');
+  t.ok(!r2.error && sim.mails.length === 1, 'no recipient: no mail and no crash');
+  t.eq(sim.readState(sim.rootNode().id).news.length, 3, 'list kept when there is no recipient');
+  // mail works again: ONE summary for everything that was waiting, then silence
+  sim.effectiveEmailFails = false;
+  sim.drive.ownerFails = false;
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.eq(x.mails.map((e) => e.subject), ['CHD design library: 3 new designs backed up'], 'the retry sends one mail');
+  t.eq(listedIn(x.mails[0]), ['  CHD-RG-7001 (Rugs)', '  CHD-RG-7002 (Rugs)', '  CHD-RG-7003 (Rugs)'], 'all three named');
+  t.eq(sim.readState(sim.rootNode().id).news, [], 'list cleared once the mail really went out');
+  sim.nextDay();
+  const m2 = sim.mark();
+  sim.exec('syncDaily');
+  t.eq(sim.since(m2).mails.length, 0, 'nothing is sent again');
+  t.eq(sim.mails.length, 2, 'mails in total (completion + one summary)');
+  // the mail went out but the state file cannot be saved afterwards: no crash, the outcome of the sync is unchanged
+  const sim5 = newSim();
+  runToCompletion(sim5);
+  addNewDesigns(sim5, 1, { styles: ['CHD-RG-7500'] });
+  sim5.drive.inject({ op: 'setContent', match: (n) => n === '_sync-state.json', skip: 1, times: 1, error: 'Exception: Something odd happened' }); // the 2nd save of the run = the one after the mail
+  sim5.nextDay();
+  const r5 = sim5.exec('syncDaily');
+  t.ok(!r5.error, 'a failing state save after the mail: threw');
+  t.eq(JSON.parse(sim5.props.get('PROGRESS')).kind, 'complete', 'a failing state save after the mail: outcome');
+  t.eq(summariesOf(sim5).length, 1, 'the mail was sent');
+  t.ok(sim5.logs.some((l) => /new-designs summary problem/.test(l)), 'the problem is logged, not thrown');
+  t.list(verifyDrive(sim5, sim5.world.index), 'drive');
+});
+
+test('D5 state file lost (or unreadable) after the first copy: Drive is re-inspected, NO flood of "new design" mail, and new designs are announced again afterwards', (t) => {
+  for (const how of ['trashed', 'garbage']) {
+    const sim = newSim();
+    runToCompletion(sim);
+    const idx = sim.world.index;
+    const root = sim.rootNode();
+    const node = sim.stateNode(root.id);
+    if (how === 'trashed') node.trashed = true;
+    else {
+      node.text = Buffer.from('{ this is not json', 'utf8');
+      node.size = node.text.length;
+    }
+    sim.nextDay();
+    const m = sim.mark();
+    const r = sim.exec('syncDaily');
+    sim.drain();
+    const x = sim.since(m);
+    t.ok(!r.error, `[${how}] threw`);
+    t.ok(x.logs.some((l) => /state: .*(no _sync-state.json yet|unreadable)/.test(l)), `[${how}] the log says the state was rebuilt`);
+    t.eq(x.files, 0, `[${how}] picture fetches`);
+    t.eq(x.mails.length, 0, `[${how}] mails after rebuilding the state (none of the ${idx.designs.length} designs may be called new)`);
+    const st = sim.readState(root.id);
+    t.eq([st.initialDone, st.news, st.newsMore], [true, [], 0], `[${how}] rebuilt state`);
+    t.list(verifyState(sim, idx), `[${how}] state`);
+    // from then on a new design is announced as usual
+    addNewDesigns(sim, 1, { styles: ['CHD-RG-7100'] });
+    sim.nextDay();
+    sim.exec('syncDaily');
+    t.eq(summariesOf(sim).map((e) => listedIn(e)), [['  CHD-RG-7100 (Rugs)']], `[${how}] the next new design is announced`);
+    t.eq(sim.mails.length, 2, `[${how}] mails in total`);
+  }
+});
+
+test('D6 a design whose picture or specs were replaced/updated is NOT "new": normal day, recheckAll(), a signature bump, and a failed update that is repaired later', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  const root = sim.rootNode();
+  changePicture(sim, idx.designs[4], /^image_02\./);
+  idx.designs[5].specs.season = 'WINTER 2027';
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.eq(x.files, 1, 'picture fetches (the replaced picture)');
+  t.ok(x.logs.some((l) => /^sync: complete \| .* this run \+2 designs, .* 1 replaced/.test(l)), 'the log mentions the replacement, not a new design: ' + x.logs.filter((l) => /^sync:/.test(l)).join(' | '));
+  t.eq(x.mails.length, 0, 'mails after a replaced picture and a spec edit');
+  t.eq(sim.readState(root.id).news, [], 'list');
+  // recheckAll() blanks every signature and inspects every design again
+  sim.exec('recheckAll');
+  sim.drain();
+  t.eq(sim.mails.length, 1, 'mails after recheckAll() (only the completion mail from the first copy)');
+  // a new signature version re-inspects everything too
+  sim.setVar('SIG_VERSION', 2);
+  sim.nextDay();
+  const m2 = sim.mark();
+  sim.exec('syncDaily');
+  const y = sim.since(m2);
+  t.ok(y.reads > idx.designs.length, 'every design was inspected again (' + y.reads + ' reads)');
+  t.eq(sim.mails.length, 1, 'mails after a signature bump');
+  // an update that fails and is repaired later: the design had been complete before, so it is still not new
+  const d = idx.designs[7];
+  const f = changePicture(sim, d, /^image_01\./);
+  sim.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(d, f.name) });
+  sim.nextDay();
+  sim.exec('syncDaily');
+  const key = `${d.dir}/${d.slide}`;
+  const mid = sim.readState(root.id).designs[key];
+  t.ok(JSON.parse(sim.props.get('PROGRESS')).kind === 'incomplete' && mid && mid.sig === '' && mid.at, 'precondition: the update failed and the design is open (its earlier backup date is kept): ' + JSON.stringify(mid && [mid.sig, mid.at]));
+  sim.world.clearRules();
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'complete', 'repaired');
+  t.eq(sim.mails.length, 1, 'mails after the repair');
+  t.eq(sim.readState(root.id).news, [], 'list after the repair');
+  t.list(verifyDrive(sim, idx), 'drive');
+  t.list(verifyCatalog(sim, idx), 'catalog');
+});
+
+test('D7 a new design that failed to copy is not reported until it is copied; the others are announced the same day, with the stuck one named as waiting', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  const before = idx.designs.length;
+  const [a, b] = addNewDesigns(sim, 2, { styles: ['CHD-RG-7201', 'CHD-RG-7202'] });
+  sim.world.inject({ kind: 'file', mode: '404', match: isOneOf([a]) });
+  sim.nextDay();
+  const m1 = sim.mark();
+  sim.exec('syncDaily');
+  const x1 = sim.since(m1);
+  const root = sim.rootNode();
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'incomplete', 'day 1: one design is still open');
+  t.eq(x1.mails.map((e) => e.subject), ['CHD design library: 1 new design backed up'], 'day 1: the design that was copied is announced the same day');
+  t.eq(listedIn(x1.mails[0]), ['  CHD-RG-7202 (Rugs)'], 'day 1: only the design that really was copied is listed');
+  t.ok(x1.mails[0].body.includes('1 design could not be copied yet (CHD-RG-7201). It is tried again every day.'), 'day 1: the stuck design is named as waiting: ' + x1.mails[0].body.split('\n').slice(-8).join(' / '));
+  t.ok(x1.mails[0].body.includes(`The backup now holds ${before + 1} designs.`), 'day 1: total counts the design that is in Drive, not the stuck one');
+  t.eq(sim.readState(root.id).news, [], 'day 1: list cleared after the mail');
+  sim.nextDay();
+  const m2 = sim.mark();
+  sim.exec('syncDaily');
+  t.eq(sim.since(m2).mails.length, 0, 'day 2 (still failing, nothing new): no summary');
+  sim.world.clearRules();
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'complete', 'day 3: complete');
+  t.eq(x.mails.map((e) => e.subject), ['CHD design library: 1 new design backed up'], 'day 3: one summary');
+  t.eq(listedIn(x.mails[0]), ['  CHD-RG-7201 (Rugs)'], 'day 3: the design that was waiting, once (the other one is not repeated)');
+  t.ok(!x.mails[0].body.includes('could not be copied'), 'day 3: nothing is waiting any more');
+  t.ok(x.mails[0].body.includes(`The backup now holds ${before + 2} designs.`), 'day 3: total');
+  t.eq(sim.props.get('FAIL_STREAK'), '0', 'day 3: the failed-run streak is back to 0');
+  t.list(verifyDrive(sim, idx), 'drive');
+  // a single new design that fails first: nothing at all until it is copied (nothing was copied, so there is nothing to announce), then exactly it
+  const sim2 = newSim();
+  runToCompletion(sim2);
+  const [c] = addNewDesigns(sim2, 1, { styles: ['CHD-RG-7301'] });
+  sim2.world.inject({ kind: 'file', mode: '404', match: isOneOf([c]) });
+  sim2.nextDay();
+  sim2.exec('syncDaily');
+  sim2.world.clearRules();
+  t.eq(sim2.mails.length, 1, 'single failing design: no summary on the failing day');
+  sim2.nextDay();
+  sim2.exec('syncDaily');
+  t.eq(summariesOf(sim2).map((e) => listedIn(e)), [['  CHD-RG-7301 (Rugs)']], 'single failing design: announced the day it is copied');
+});
+
+test('D8 more than 25 new designs: the mail names 25 and says "... and N more"; the saved list is capped at NEWS_MAX but the count stays right', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const nds = addNewDesigns(sim, 30, { size: 600 });
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  sim.drain();
+  const x = sim.since(m);
+  t.eq(x.mails.length, 1, 'mails');
+  const mail = x.mails[0] || { subject: '', body: '' };
+  t.eq(mail.subject, 'CHD design library: 30 new designs backed up', 'subject counts all 30');
+  const lines = listedIn(mail);
+  t.eq(lines.length, 26, 'lines in the list (25 designs + the "and more" line)');
+  t.eq(lines.slice(0, 25), nds.slice(0, 25).map((nd) => `  ${nd.style} (Rugs)`), 'the first 25 designs');
+  t.eq(lines[25], '  ... and 5 more', 'the rest is counted');
+  t.ok(!mail.body.includes(nds[25].style), 'the 26th style is not named');
+  t.ok(mail.body.includes(`The backup now holds ${sim.world.index.designs.length} designs.`), 'total');
+  // exactly 25 and exactly 26 (boundary)
+  for (const [n, tail] of [[25, null], [26, '  ... and 1 more']]) {
+    const s2 = newSim();
+    runToCompletion(s2);
+    addNewDesigns(s2, n, { size: 500, files: 1 });
+    s2.nextDay();
+    s2.exec('syncDaily');
+    s2.drain();
+    const l2 = listedIn(summariesOf(s2)[0]);
+    t.eq([l2.length, l2[l2.length - 1]], tail ? [26, tail] : [25, '  CHD-RG-' + (9000 + n) + ' (Rugs)'], `${n} new designs`);
+  }
+  // the state file keeps at most NEWS_MAX names; the rest is only counted (here NEWS_MAX = 5, the mail is broken for a day)
+  const run = (src) => {
+    const s3 = new Sim(SMALL_INDEX, { src, vars: { NEWS_MAX: 5 } });
+    runToCompletion(s3);
+    addNewDesigns(s3, 8, { size: 500, files: 1 });
+    s3.mailFails = true;
+    s3.nextDay();
+    s3.exec('syncDaily');
+    return s3;
+  };
+  const s3 = run(undefined);
+  const st = s3.readState(s3.rootNode().id);
+  t.eq([st.news.length, st.newsMore], [5, 3], 'saved list: 5 names + 3 counted');
+  s3.mailFails = false;
+  s3.nextDay();
+  s3.exec('syncDaily');
+  const big8 = summariesOf(s3)[0] || { subject: '', body: '' };
+  t.eq(big8.subject, 'CHD design library: 8 new designs backed up', 'subject still counts all 8');
+  t.eq([listedIn(big8).length, listedIn(big8)[5]], [6, '  ... and 3 more'], 'list: 5 names + "and 3 more"');
+  t.eq([s3.readState(s3.rootNode().id).news.length, s3.readState(s3.rootNode().id).newsMore], [0, 0], 'cleared after sending');
+  // control: without the cap the simulator notices
+  const uncapped = GS_SRC.replace('if (st.news.length < NEWS_MAX) {', 'if (true) {');
+  t.ok(uncapped !== GS_SRC, 'control script differs from the real one');
+  const s4 = run(uncapped);
+  t.ok(s4.readState(s4.rootNode().id).news.length > 5, 'the simulator must notice a list without the NEWS_MAX cap');
+});
+
+test('D9 new designs found over several partial slices are collected in the state and sent ONCE, by the slice that completes', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  const nds = addNewDesigns(sim, 12, { files: 3, size: 3000 });
+  sim.setVar('TIME_BUDGET_MS', 8000);
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  t.eq(sim.syncTriggers().length, 1, 'the first slice leaves a continuation (more to do)');
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'partial', 'first slice is partial');
+  t.eq(sim.since(m).mails.length, 0, 'no mail after the first (partial) slice');
+  const part = sim.readState(sim.rootNode().id).news;
+  t.ok(part.length >= 1 && part.length < 12, `the list is saved while slices follow (${part.length} so far)`);
+  sim.drain();
+  const x = sim.since(m);
+  t.ok(sim.runs.length >= 4, 'several slices were needed: ' + sim.runs.length);
+  t.eq(x.mails.length, 1, 'mails over all slices');
+  t.eq(x.mails[0] && x.mails[0].subject, 'CHD design library: 12 new designs backed up', 'subject');
+  t.eq(listedIn(x.mails[0]), nds.map((nd) => `  ${nd.style} (Rugs)`).slice(0, 12), 'all 12 named, none twice');
+  t.eq(sim.readState(sim.rootNode().id).news, [], 'cleared');
+  t.list(verifyDrive(sim, idx), 'drive');
+  t.list(verifyCatalog(sim, idx), 'catalog');
+  maxElapsedOk(t, sim, 'D9');
+  // a slice killed by the 6-minute limit in the middle of this does not announce anything twice or lose a design
+  const sim2 = newSim();
+  runToCompletion(sim2);
+  const more = addNewDesigns(sim2, 6, { files: 2, size: 4000 });
+  sim2.nextDay();
+  sim2.exec('syncDaily', { killAfterS: 9 });
+  sim2.drain();
+  t.eq(summariesOf(sim2).map((e) => listedIn(e)), [more.map((nd) => `  ${nd.style} (Rugs)`)], 'after a kill: one mail, every design once');
+  t.list(verifyDrive(sim2, sim2.world.index), 'drive after the kill');
+});
+
+test('D10 a state file written before the "new designs" email existed still loads (v stays 1); the upgrade day names nothing; a damaged list is repaired', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  rewriteState(sim, (st) => {
+    delete st.initialDone;
+    delete st.news;
+    delete st.newsMore;
+  });
+  addNewDesigns(sim, 2, { styles: ['CHD-RG-7401', 'CHD-RG-7402'] });
+  sim.nextDay();
+  const m = sim.mark();
+  const r = sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.ok(!r.error, 'threw');
+  t.ok(!x.logs.some((l) => /unreadable/.test(l)), 'the old state is accepted as it is (not rebuilt)');
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'complete', 'complete');
+  t.eq(x.writeLog.filter((w) => w.op === 'createFile' && w.name === '_sync-state.json').length, 0, 'no second state file');
+  t.eq(x.mails.length, 0, 'the first day on the new script names nothing (it cannot tell old from new yet)');
+  const st = sim.readState(sim.rootNode().id);
+  t.eq([st.v, st.initialDone, st.news, st.newsMore], [1, true, [], 0], 'state after that day');
+  t.list(verifyDrive(sim, idx), 'drive (both designs were copied)');
+  addNewDesigns(sim, 1, { styles: ['CHD-RG-7403'] });
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(summariesOf(sim).map((e) => listedIn(e)), [['  CHD-RG-7403 (Rugs)']], 'from the next day on new designs are announced');
+  // a hand-damaged list: junk entries are dropped, good ones are used
+  rewriteState(sim, (s) => {
+    s.news = [null, 5, { s: 'CHD-OLD-1 (x)', c: 'Rugs' }, { c: 'no style' }, { s: 'CHD-OLD-2' }];
+    s.newsMore = 'x';
+  });
+  sim.nextDay();
+  const m2 = sim.mark();
+  const r2 = sim.exec('syncDaily');
+  t.ok(!r2.error, 'damaged list: threw');
+  const x2 = sim.since(m2);
+  t.eq(x2.mails.map((e) => e.subject), ['CHD design library: 2 new designs backed up'], 'damaged list: subject');
+  t.eq(listedIn(x2.mails[0]), ['  CHD-OLD-1 (x) (Rugs)', '  CHD-OLD-2'], 'damaged list: names');
+  // news that is not even an array, initialDone of the wrong type: treated like an old state (the first copy counts as not finished), nothing breaks
+  rewriteState(sim, (s) => {
+    s.news = 'oops';
+    s.initialDone = 'yes';
+  });
+  addNewDesigns(sim, 1, { styles: ['CHD-RG-7404'] });
+  sim.nextDay();
+  const m3 = sim.mark();
+  const r3 = sim.exec('syncDaily');
+  t.ok(!r3.error && sim.since(m3).mails.length === 0, 'a news value of the wrong type does not break the run, and does not announce anything');
+  const st3 = sim.readState(sim.rootNode().id);
+  t.eq([st3.initialDone, st3.news], [true, []], 'state after that run');
+});
+
+/** One compact day-by-day story that a correct script passes cleanly; returns what went wrong. Used to prove that the checks catch broken variants. */
+function dailyStory(src) {
+  const P = [];
+  const sim = new Sim(SMALL_INDEX, { src });
+  sim.addTrigger('syncDaily', 'daily'); // an older install that ran at 3 AM
+  sim.exec('setup');
+  sim.drain();
+  const daily = sim.liveTriggers().filter((x) => x.handler === 'syncDaily');
+  if (daily.length !== 1 || daily[0].hour !== 15) P.push(`daily triggers after setup(): ${JSON.stringify(daily.map((x) => x.hour))}`);
+  if (sim.mails.length !== 1) P.push(`mails after the first copy: ${sim.mails.length}`);
+  const [a, b] = addNewDesigns(sim, 2, { styles: ['CHD-RG-8001', 'CHD-RG-8002'] });
+  sim.world.inject({ kind: 'file', mode: '404', match: isOneOf([a]) });
+  sim.nextDay();
+  sim.exec('syncDaily'); // a fails, b is copied: the run is incomplete, but b is announced the same day and a is named as waiting
+  const day1 = summariesOf(sim);
+  if (day1.length !== 1 || JSON.stringify(listedIn(day1[0])) !== JSON.stringify([`  ${b.style} (Rugs)`])) P.push(`summary on the day one design failed: ${JSON.stringify(day1.map((e) => listedIn(e)))}`);
+  else if (!day1[0].body.includes(`could not be copied yet (${a.style})`)) P.push('the design that could not be copied is not named in the summary');
+  sim.world.clearRules();
+  sim.mailFails = true;
+  sim.nextDay();
+  sim.exec('syncDaily'); // complete, but the mail cannot be sent
+  const kept = sim.readState(sim.rootNode().id).news.map((n) => n.s);
+  if (JSON.stringify(kept) !== JSON.stringify([a.style])) P.push(`list after a failed mail: ${JSON.stringify(kept)}`);
+  sim.mailFails = false;
+  sim.nextDay();
+  sim.exec('syncDaily');
+  if (summariesOf(sim).length !== 2 || !summariesOf(sim)[1].body.includes(a.style) || summariesOf(sim)[1].body.includes(b.style)) P.push(`summary after the mail works again: ${summariesOf(sim).length} mails`);
+  sim.nextDay();
+  sim.exec('syncDaily');
+  if (summariesOf(sim).length !== 2) P.push('a mail on a day with nothing new');
+  const d = sim.world.index.designs[4]; // a replaced picture whose update fails first
+  const f = changePicture(sim, d, /^image_01\./);
+  sim.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(d, f.name) });
+  sim.nextDay();
+  sim.exec('syncDaily');
+  sim.world.clearRules();
+  sim.nextDay();
+  sim.exec('syncDaily');
+  if (summariesOf(sim).length !== 2) P.push('a replaced design was announced as new');
+  return P;
+}
+
+/** The first-complete email must go out ALONE: a list that is waiting is kept for the next run that sends summaries. Returns what went wrong. */
+function aloneStory(src) {
+  const P = [];
+  const sim = new Sim(SMALL_INDEX, { src });
+  sim.exec('setup');
+  sim.drain();
+  sim.nextDay();
+  rewriteState(sim, (st) => {
+    st.news = [{ s: 'CHD-X-1', c: 'Rugs' }];
+  });
+  sim.props.delete('MAIL_DONE'); // as if the first-complete mail had not been sent yet
+  sim.exec('syncDaily');
+  if (summariesOf(sim).length) P.push('a summary was sent in the run that sends the first-complete mail');
+  if (mailsTo(sim, /complete/).length !== 2) P.push(`first-complete mails: ${mailsTo(sim, /complete/).length}`);
+  sim.nextDay();
+  sim.exec('syncDaily');
+  if (summariesOf(sim).length !== 1 || !summariesOf(sim)[0].body.includes('CHD-X-1 (Rugs)')) P.push('the waiting list was not sent by the next completing run');
+  return P;
+}
+
+/** One design that never copies while new designs arrive every day: the summaries, the "failing" alert and an upgraded state must all still work. */
+function stuckStory(src) {
+  const P = [];
+  const sim = new Sim(SMALL_INDEX, { src });
+  sim.exec('setup');
+  sim.drain();
+  const d = sim.world.index.designs[4];
+  const f = changePicture(sim, d, /^image_01\./);
+  sim.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(d, f.name) }); // an update that never works
+  for (let day = 1; day <= 3; day++) {
+    const [nd] = addNewDesigns(sim, 1, { styles: ['CHD-RG-' + (8100 + day)] });
+    sim.nextDay();
+    sim.exec('syncDaily');
+    const s = summariesOf(sim);
+    if (s.length !== day || !s[day - 1].body.includes(nd.style)) P.push(`day ${day}: ${s.length} summaries, the newest does not name ${nd.style}`);
+    else if (!s[day - 1].body.includes('could not be copied yet')) P.push(`day ${day}: the summary does not say that a design is waiting`);
+  }
+  if (mailsTo(sim, /failing/).length !== 1) P.push(`"failing" mails after 3 days with a stuck design: ${mailsTo(sim, /failing/).length}`);
+  // a state from before the feature (the completion mail went out long ago) with a stuck design: the summaries must still switch on
+  const up = new Sim(SMALL_INDEX, { src });
+  up.exec('setup');
+  up.drain();
+  rewriteState(up, (st) => {
+    delete st.initialDone;
+    delete st.news;
+    delete st.newsMore;
+  });
+  const d2 = up.world.index.designs[4];
+  const f2 = changePicture(up, d2, /^image_01\./);
+  up.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(d2, f2.name) });
+  up.nextDay();
+  up.exec('syncDaily');
+  if (up.readState(up.rootNode().id).initialDone !== true) P.push('an upgraded state with a stuck design never switched the summaries on');
+  addNewDesigns(up, 1, { styles: ['CHD-RG-8200'] });
+  up.nextDay();
+  up.exec('syncDaily');
+  if (summariesOf(up).length !== 1) P.push(`summaries after the upgrade day: ${summariesOf(up).length}`);
+  return P;
+}
+
+/** The daily trigger: never left without one, corrected by a daily run and recorded only when moved. */
+function triggerStory(src) {
+  const P = [];
+  const sim = new Sim(SMALL_INDEX, { src });
+  sim.addTrigger('syncDaily', 'daily'); // 3 AM from an older install
+  sim.triggerFault = { handler: 'syncDaily', times: 1 };
+  sim.exec('setup');
+  const left = sim.liveTriggers().filter((x) => x.handler === 'syncDaily').map((x) => x.hour);
+  if (left.length !== 1 || left[0] !== 3) P.push(`daily triggers after Google refused the new one: ${JSON.stringify(left)}`);
+  const sim2 = new Sim(SMALL_INDEX, { src });
+  sim2.addTrigger('syncDaily', 'daily'); // new code pasted over an older install, setup() not run
+  sim2.exec('syncDaily');
+  sim2.drain();
+  const now = sim2.liveTriggers().filter((x) => x.handler === 'syncDaily');
+  if (now.length !== 1 || now[0].hour !== 15) P.push(`a daily run did not move the old trigger to 15:00: ${JSON.stringify(now.map((x) => x.hour))}`);
+  const id = now[0] && now[0].id;
+  sim2.nextDay();
+  sim2.exec('syncDaily');
+  const again = sim2.liveTriggers().filter((x) => x.handler === 'syncDaily');
+  if (again.length !== 1 || again[0].id !== id) P.push('the daily trigger is replaced on every daily run');
+  return P;
+}
+
+test('D11 mutation checks: the day-by-day stories pass on the real script and are caught on each broken variant (so the new tests can fail)', (t) => {
+  t.eq(dailyStory(GS_SRC), [], 'dailyStory on the real script');
+  t.eq(aloneStory(GS_SRC), [], 'aloneStory on the real script');
+  t.eq(stuckStory(GS_SRC), [], 'stuckStory on the real script');
+  t.eq(triggerStory(GS_SRC), [], 'triggerStory on the real script');
+  const once = (from, to) => {
+    t.eq(GS_SRC.split(from).length - 1, 1, 'mutation anchor is unique: ' + from.slice(0, 50));
+    return GS_SRC.replace(from, () => to);
+  };
+  const installNew = "  ScriptApp.newTrigger('syncDaily').timeBased().everyDays(1).atHour(DAILY_HOUR).create();\n";
+  const installOld = "  old.forEach(function (t) {\n    ScriptApp.deleteTrigger(t);\n  });\n";
+  const broken = {
+    'install trigger returns early when one exists (old behaviour)': [dailyStory, once(installNew + '  old.forEach', '  if (old.length) return;\n' + installNew + '  old.forEach')],
+    'trigger hour back at 3': [dailyStory, once('var DAILY_HOUR = 15;', 'var DAILY_HOUR = 3;')],
+    'a failed mail still clears the list': [dailyStory, once("var sent = sendMail_('CHD design library: '", "var sent = true;\n    sendMail_('CHD design library: '")],
+    'a mail on a day with nothing new': [dailyStory, once('|| !st.initialDone || !st.news.length) return;', '|| !st.initialDone) return;')],
+    'a design that was complete before counts as new when its update fails once': [dailyStory, once('var known = !!(entry && (entry.sig || entry.at));', 'var known = !!(entry && entry.sig);')],
+    'the first copy lists every design as new': [dailyStory, once('  if (!st.initialDone) return;\n  ctx.newDesigns++;', '  ctx.newDesigns++;').replace('        st.news = [];\n        st.newsMore = 0;\n        ctx.firstComplete = true;', '        ctx.firstComplete = true;')],
+    'no summary after a run that could not finish (one stuck design silences everything)': [stuckStory, once("} else if (kind === 'complete' || kind === 'incomplete' || kind === 'quota' || kind === 'stalled') {", "} else if (kind === 'complete') {")],
+    'the stuck design is not named in the summary': [stuckStory, once("  var open = ctx.index.designs.length - ctx.totals.done;\n", "  return '';\n  var open = ctx.index.designs.length - ctx.totals.done;\n")],
+    'an incomplete run that copied something does not count as a failed run': [stuckStory, once("var bad = kind === 'failed' || kind === 'incomplete' || ((kind", "var bad = kind === 'failed' || ((kind")],
+    'a stuck design on an upgraded state keeps the summaries off': [stuckStory, once("(kind === 'incomplete' && PropertiesService.getScriptProperties().getProperty('MAIL_DONE'))", 'false')],
+    'old daily triggers are deleted before the new one is made': [triggerStory, once(installNew + installOld, installOld + installNew)],
+    'a daily run no longer corrects the trigger hour': [triggerStory, once('  if (!isStopped_()) ensureDailyHour_();\n', '')],
+    'the moved hour is never recorded (the trigger is replaced on every daily run)': [triggerStory, once("setProperty('DAILY_HOUR_SET', String(DAILY_HOUR))", "setProperty('DAILY_HOUR_SET', 'x')")],
+  };
+  for (const [what, [story, src]] of Object.entries(broken)) t.ok(story(src).length > 0, `the simulator must notice: ${what}`);
+  const both = once("    } else if (kind === 'complete' || kind === 'incomplete' || kind === 'quota' || kind === 'stalled') {", "    }\n    if (kind === 'complete') {\n      ctx.firstComplete = false;");
+  t.ok(aloneStory(both).length > 0, 'the simulator must notice: a summary sent together with the first-complete mail');
+});
+
+test('D12 one design that cannot be copied does not silence the daily proof: every day with new designs still gets its summary (with the stuck one named), and the "failing" email still comes, once', (t) => {
+  const sim = newSim();
+  runToCompletion(sim);
+  const idx = sim.world.index;
+  const stuck = idx.designs[6]; // an existing design whose picture was replaced and now never downloads
+  const f = changePicture(sim, stuck, /^image_01\./);
+  sim.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(stuck, f.name) });
+  const days = [2, 2, 2, 2, 2, 0, 0, 2]; // five weekdays with a publish, a weekend without one, then Monday
+  const announced = [];
+  const failingAt = [];
+  days.forEach((n, i) => {
+    const day = i + 1;
+    const nds = n ? addNewDesigns(sim, n) : [];
+    sim.nextDay();
+    const m = sim.mark();
+    const r = sim.exec('syncDaily');
+    const x = sim.since(m);
+    t.ok(!r.error, `day ${day}: threw`);
+    t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'incomplete', `day ${day}: the run cannot finish`);
+    t.eq(sim.props.get('FAIL_STREAK'), String(day), `day ${day}: failed-run streak`);
+    const sums = x.mails.filter((e) => /new design/.test(e.subject));
+    if (n) {
+      t.eq(sums.length, 1, `day ${day}: summaries`);
+      t.eq(listedIn(sums[0] || { body: '' }), nds.map((nd) => `  ${nd.style} (Rugs)`), `day ${day}: exactly that day's designs`);
+      t.ok((sums[0] || { body: '' }).body.includes(`1 design could not be copied yet (${stuck.style}).`), `day ${day}: the stuck design is named`);
+      t.ok((sums[0] || { body: '' }).body.includes(`The backup now holds ${idx.designs.length} designs.`), `day ${day}: total`);
+      announced.push(...listedIn(sums[0] || { body: '' }));
+    } else t.eq(sums.length, 0, `day ${day}: no summary on a day with nothing new`);
+    if (x.mails.some((e) => /failing/.test(e.subject))) failingAt.push(day);
+    t.eq(sim.readState(sim.rootNode().id).news, [], `day ${day}: list cleared`);
+  });
+  t.eq(failingAt, [3], 'the "backup is failing" email: sent once, on the 3rd failing day, never again');
+  const fail = mailsTo(sim, /failing/)[0] || { body: '' };
+  t.ok(fail.body.includes(`${stuck.dir}/${stuck.slide}`), 'the failing email names the design: ' + fail.body.split('\n').slice(0, 4).join(' / '));
+  t.eq(announced.length, 12, 'designs announced in total');
+  t.eq(new Set(announced).size, 12, 'every design announced once');
+  // repaired: complete again, nothing to announce (the stuck design was an update, not new), streak and failing-mail flag reset
+  sim.world.clearRules();
+  sim.nextDay();
+  const m = sim.mark();
+  sim.exec('syncDaily');
+  const y = sim.since(m);
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'complete', 'repaired: complete');
+  t.eq(y.mails.length, 0, 'repaired: no summary for an update');
+  t.eq([sim.props.get('FAIL_STREAK'), sim.props.has('FAIL_MAILED')], ['0', false], 'repaired: streak and failing flag reset');
+  t.list(verifyDrive(sim, idx), 'drive');
+  t.list(verifyCatalog(sim, idx), 'catalog');
+  addNewDesigns(sim, 1, { styles: ['CHD-RG-7900'] });
+  sim.nextDay();
+  sim.exec('syncDaily');
+  const last = summariesOf(sim).slice(-1)[0] || { body: '' };
+  t.eq(listedIn(last), ['  CHD-RG-7900 (Rugs)'], 'the next new design is announced');
+  t.ok(!last.body.includes('could not be copied'), 'and no design is waiting any more');
+});
+
+test('D13 a daily run puts a daily trigger at the wrong hour (or doubled) right by itself; a trigger that cannot be created never fails the sync', (t) => {
+  // new code pasted over an old install and only sync run: the 3 AM trigger fires with the new code
+  const sim = newSim();
+  sim.addTrigger('syncDaily', 'daily');
+  sim.addTrigger('syncDaily', 'daily');
+  const r = sim.exec('syncDaily');
+  sim.drain();
+  t.ok(!r.error, 'threw');
+  const daily = () => sim.liveTriggers().filter((x) => x.handler === 'syncDaily');
+  t.eq(daily().map((x) => x.hour), [15], 'daily triggers after the first daily run');
+  t.eq(sim.props.get('DAILY_HOUR_SET'), '15', 'the hour is remembered');
+  t.ok(sim.logs.some((l) => /^Daily trigger installed: every day at about 3 PM.* Replaced 2 earlier daily trigger\(s\)/.test(l)), 'the log says what was replaced');
+  t.list(verifyDrive(sim, SMALL_INDEX), 'the sync itself ran normally');
+  t.eq(mailsTo(sim, /complete/).length, 1, 'completion mail');
+  // from then on the daily run leaves it alone
+  const id = daily()[0].id;
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(daily().map((x) => x.id), [id], 'the trigger is not touched again');
+  // DAILY_HOUR edited in the code: the next daily run moves it
+  sim.setVar('DAILY_HOUR', 9);
+  sim.nextDay();
+  sim.exec('syncDaily');
+  t.eq(daily().map((x) => x.hour), [9], 'hour after DAILY_HOUR was edited');
+  // after stopAll() a daily run (a manual one) switches nothing on
+  sim.exec('stopAll');
+  t.eq(sim.liveTriggers().length, 0, 'triggers after stopAll');
+  sim.setVar('DAILY_HOUR', 10); // so that there would be something to correct
+  sim.exec('syncDaily');
+  t.eq(sim.liveTriggers().length, 0, 'a daily run after stopAll() creates no trigger');
+  // Google refuses to create the trigger: the run goes on, the old trigger stays, the next daily run tries again
+  const sim2 = newSim();
+  sim2.addTrigger('syncDaily', 'daily');
+  sim2.triggerFault = { handler: 'syncDaily', times: 1 };
+  const r2 = sim2.exec('syncDaily');
+  sim2.drain();
+  t.ok(!r2.error, 'a failing trigger install: threw');
+  t.ok(sim2.logs.some((l) => /could not move it to 3 PM.*run setup\(\) once/.test(l)), 'the log says what to do');
+  t.eq(sim2.liveTriggers().filter((x) => x.handler === 'syncDaily').map((x) => x.hour), [3], 'the old trigger is still there');
+  t.list(verifyDrive(sim2, SMALL_INDEX), 'a failing trigger install: the sync itself ran normally');
+  sim2.nextDay();
+  sim2.exec('syncDaily');
+  t.eq(sim2.liveTriggers().filter((x) => x.handler === 'syncDaily').map((x) => x.hour), [15], 'the next daily run finishes the move');
+});
+
+test('D14 a run that ends early (daily limit, repeated errors) or cannot write the Catalog still sends the summary for what it copied, and says why', (t) => {
+  // Google's daily file limit hits in the middle of a day with 10 new designs
+  const sim = newSim();
+  runToCompletion(sim);
+  const before = sim.world.index.designs.length;
+  const nds = addNewDesigns(sim, 10, { files: 2, size: 800 });
+  sim.drive.inject({ op: 'createFile', error: 'Exception: Service invoked too many times for one day: drive.', skip: 9 });
+  sim.nextDay();
+  const m = sim.mark();
+  const r = sim.exec('syncDaily');
+  const x = sim.since(m);
+  t.ok(!r.error, 'quota: threw');
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'quota', 'quota: kind');
+  t.eq(x.mails.length, 1, 'quota: one summary');
+  const first = listedIn(x.mails[0] || { body: '' });
+  t.ok(first.length >= 1 && first.length < 10, `quota: some of the designs were copied (${first.length})`);
+  t.eq(first, nds.slice(0, first.length).map((nd) => `  ${nd.style} (Rugs)`), 'quota: the designs that were copied, in order');
+  t.ok((x.mails[0] || { body: '' }).body.includes(`The backup now holds ${before + first.length} designs.`), 'quota: total counts only what is in Drive');
+  t.ok((x.mails[0] || { body: '' }).body.includes('Google\'s daily limit was reached'), 'quota: the summary says why it stopped');
+  sim.drive.faults.length = 0;
+  sim.nextDay();
+  sim.exec('syncDaily');
+  sim.drain();
+  const second = listedIn(summariesOf(sim)[1] || { body: '' });
+  t.eq(first.concat(second), nds.map((nd) => `  ${nd.style} (Rugs)`), 'quota: the next day announces the rest, nobody twice');
+  t.eq(summariesOf(sim).length, 2, 'quota: two summaries in all');
+  t.list(verifyDrive(sim, sim.world.index), 'quota: drive');
+  // six designs in a row fail: the run stops, but the two that were copied first are announced
+  const sim2 = newSim();
+  runToCompletion(sim2);
+  const bad = addNewDesigns(sim2, 8, { files: 1, size: 700 });
+  sim2.world.inject({ kind: 'file', mode: '404', match: isOneOf(bad.slice(2)) });
+  sim2.nextDay();
+  sim2.exec('syncDaily');
+  t.eq(JSON.parse(sim2.props.get('PROGRESS')).kind, 'stalled', 'stalled: kind');
+  const s2 = summariesOf(sim2);
+  t.eq(s2.length, 1, 'stalled: one summary');
+  t.eq(listedIn(s2[0] || { body: '' }), bad.slice(0, 2).map((nd) => `  ${nd.style} (Rugs)`), 'stalled: the designs that were copied');
+  t.ok((s2[0] || { body: '' }).body.includes('Several designs in a row could not be copied'), 'stalled: the summary says why it stopped');
+  sim2.world.clearRules();
+  for (let day = 0; day < 4 && JSON.parse(sim2.props.get('PROGRESS')).kind !== 'complete'; day++) {
+    sim2.nextDay();
+    sim2.exec('syncDaily');
+    sim2.drain();
+  }
+  t.eq(JSON.parse(sim2.props.get('PROGRESS')).kind, 'complete', 'stalled: complete once the problem is gone');
+  t.eq(summariesOf(sim2).map((e) => listedIn(e)).flat().sort(), bad.map((nd) => `  ${nd.style} (Rugs)`).sort(), 'stalled: every design announced once over the days');
+  t.list(verifyDrive(sim2, sim2.world.index), 'stalled: drive');
+  // only the Catalog cannot be written: the new designs are announced, the Catalog is named as the open item
+  const sim3 = newSim();
+  runToCompletion(sim3);
+  addNewDesigns(sim3, 2, { styles: ['CHD-RG-7601', 'CHD-RG-7602'] });
+  sim3.drive.inject({ op: 'openSpreadsheet', times: 1, error: 'Exception: Something odd happened' });
+  sim3.nextDay();
+  const m3 = sim3.mark();
+  sim3.exec('syncDaily');
+  const x3 = sim3.since(m3);
+  t.eq(JSON.parse(sim3.props.get('PROGRESS')).kind, 'incomplete', 'catalog: kind');
+  t.eq(x3.mails.map((e) => e.subject), ['CHD design library: 2 new designs backed up'], 'catalog: one summary');
+  t.ok((x3.mails[0] || { body: '' }).body.includes('The Catalog sheet could not be written this time.') && !(x3.mails[0] || { body: '' }).body.includes('design could not be copied'), 'catalog: the Catalog is named, no design is');
+  sim3.nextDay();
+  const m4 = sim3.mark();
+  sim3.exec('syncDaily');
+  t.eq([JSON.parse(sim3.props.get('PROGRESS')).kind, sim3.since(m4).mails.length], ['complete', 0], 'catalog: written the next day, nothing more to say');
+  t.list(verifyCatalog(sim3, sim3.world.index), 'catalog: sheet');
+  // a run in the middle of a pass ('partial') never sends anything, and the list waits for the slice that ends the pass
+  const sim4 = newSim();
+  runToCompletion(sim4);
+  addNewDesigns(sim4, 6, { files: 3, size: 3000 });
+  sim4.setVar('TIME_BUDGET_MS', 6000);
+  sim4.nextDay();
+  sim4.exec('syncDaily');
+  t.eq(JSON.parse(sim4.props.get('PROGRESS')).kind, 'partial', 'partial: kind');
+  t.eq(summariesOf(sim4).length, 0, 'partial: nothing sent mid-pass');
+});
+
+test('D15 a state from before the "new designs" email with a design that never copies: summaries switch on anyway; a first copy that never finished does not (and does not flood later)', (t) => {
+  // (a) the first copy was finished long ago (its completion mail exists), a design has been stuck since, and the new code arrives
+  const sim = newSim();
+  runToCompletion(sim);
+  rewriteState(sim, (st) => {
+    delete st.initialDone;
+    delete st.news;
+    delete st.newsMore;
+  });
+  const stuck = sim.world.index.designs[4];
+  const f = changePicture(sim, stuck, /^image_01\./);
+  sim.world.inject({ kind: 'file', mode: '404', match: (rel) => rel === relOf(stuck, f.name) });
+  addNewDesigns(sim, 2, { styles: ['CHD-RG-7701', 'CHD-RG-7702'] });
+  sim.nextDay();
+  const m = sim.mark();
+  const r = sim.exec('syncDaily');
+  t.ok(!r.error, 'threw');
+  t.eq(JSON.parse(sim.props.get('PROGRESS')).kind, 'incomplete', 'upgrade day: the run cannot finish');
+  t.eq(sim.since(m).mails.length, 0, 'upgrade day: nothing is named (old and new cannot be told apart yet)');
+  const st = sim.readState(sim.rootNode().id);
+  t.eq([st.v, st.initialDone, st.news], [1, true, []], 'upgrade day: summaries are switched on although the run was incomplete');
+  addNewDesigns(sim, 1, { styles: ['CHD-RG-7703'] });
+  sim.nextDay();
+  const m2 = sim.mark();
+  sim.exec('syncDaily');
+  const x2 = sim.since(m2);
+  t.eq(x2.mails.map((e) => e.subject), ['CHD design library: 1 new design backed up'], 'next day: one summary');
+  t.eq(listedIn(x2.mails[0]), ['  CHD-RG-7703 (Rugs)'], 'next day: just that design');
+  t.ok(x2.mails[0].body.includes(`could not be copied yet (${stuck.style})`), 'next day: the stuck design is named');
+  // (b) a first copy that has not finished (one design never copies): nothing is announced as new, and no flood when it finally finishes
+  const sim2 = newSim();
+  const never = SMALL_INDEX.designs[2];
+  sim2.world.inject({ kind: 'file', mode: '404', match: isOneOf([never]) });
+  for (let day = 0; day < 3; day++) {
+    sim2.exec('syncDaily');
+    sim2.drain();
+    sim2.nextDay();
+  }
+  const st2 = sim2.readState(sim2.rootNode().id);
+  t.eq([st2.initialDone, st2.news], [false, []], 'unfinished first copy: nothing switched on');
+  t.eq(sim2.mails.map((e) => e.subject), ['CHD design library backup is failing'], 'unfinished first copy: only the "failing" email (after 3 failing days), no summary');
+  sim2.world.clearRules();
+  sim2.exec('syncDaily');
+  sim2.drain();
+  t.eq(JSON.parse(sim2.props.get('PROGRESS')).kind, 'complete', 'unfinished first copy: finally complete');
+  t.eq(sim2.mails.map((e) => e.subject), ['CHD design library backup is failing', 'CHD design library backup is complete'], 'unfinished first copy: then the completion email, still no summary');
+  t.eq(sim2.readState(sim2.rootNode().id).news, [], 'unfinished first copy: nothing listed as new');
 });
 
 // ------------------------------------------------------------------ summary
