@@ -959,6 +959,14 @@ async function publish({ commit }) {
     execSync('bun run build', { cwd: REPO, stdio: 'inherit' });
     const names = published.map((p) => p.style).join(', ');
     execSync('git add src/assets public/images', { cwd: REPO, stdio: 'inherit' });
+    // Keep library-index.json (read by the Google Drive backup) in step with the library. Never blocks a publish.
+    try {
+      const { buildIndex, serializeIndex } = await import('./lib/library-index.mjs');
+      fs.writeFileSync(path.join(REPO, 'library-index.json'), serializeIndex(buildIndex(REPO)));
+      execSync('git add library-index.json', { cwd: REPO, stdio: 'inherit' });
+    } catch (e) {
+      console.log(`publish: library-index.json not updated (${String(e.message).slice(0, 120)})`);
+    }
     // A previous run may have committed these designs but failed to push (e.g.
     // a GitHub outage or a lapsed credential). Re-staging then produces no
     // changes, and `git commit` would abort the whole run - so commit only

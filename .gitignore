@@ -28,3 +28,7 @@ dist-ssr
 
 # OCR training data (used only by local scripts)
 eng.traineddata
+
+# Library exports (scripts/export-library.mjs); an export is a 2 GB copy of the images, never commit one
+/library-export/
+/library-export-*/
