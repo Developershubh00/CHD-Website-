@@ -29,16 +29,28 @@ Generates lifestyle images for new submissions and REDO rows.
    stash safely first).
 2. Confirm env vars: `CHD_BRIDGE_URL`, `CHD_BRIDGE_TOKEN`,
    `GEMINI_API_KEY`. Missing → STOP and report which.
+   (`GEMINI_IMAGE_MODEL` is optional. By default images are made by the
+   Pro image model, picked automatically and logged as
+   `intake: image model gemini-3-pro-image (pro)`. Setting the variable
+   pins a model, e.g. `gemini-3.1-flash-image` to roll back to Flash.)
 3. `bun install` only if node_modules is missing or sharp fails to load.
 4. `bun scripts/design-pipeline.mjs intake` in the background; monitor to
-   completion. Large batches take hours (roughly 2-5 min per design) -
-   never stop it early.
+   completion. Large batches take hours (roughly 2-5 min per design on
+   Flash; Pro is a little slower - re-measure) - never stop it early.
 5. Per-design `FAILED` lines are normal (retried next run). If the
    process dies before `intake: done`, re-run once.
 6. The script emails the team itself: images ready / nothing submitted /
    action needed (bad files, category checks) / billing stopped. If it
    logs "notification skipped", mention that in your report.
-7. `intake: STOPPED ... GEMINI_BILLING` means the Gemini project's prepaid
+7. If the log says `WARNING no usable Pro image model - FELL BACK to ...`,
+   the designs of that run were made with the Flash model and the team
+   email says so - mention it in your report.
+   `intake: STOPPED - GEMINI_IMAGE_MODEL "..." is not in this API key's model
+   list` (exit code 3) means the override is mistyped or retired: nothing
+   can be retried, report it. `intake: STOPPED - Gemini stayed overloaded
+   for 3 designs in a row` means Gemini itself is struggling: the rest stay
+   pending and the next run retries them.
+8. `intake: STOPPED ... GEMINI_BILLING` means the Gemini project's prepaid
    credits are depleted. Nothing can be generated until the owner tops up
    at https://ai.studio/projects; the script has already emailed. Report
    it plainly - do not retry.
