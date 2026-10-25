@@ -656,6 +656,34 @@ async function billingAlert(quiet) {
   }
 }
 
+// Google Drive refusing a write ("Exception: Limit Exceeded: Drive", storage
+// full, daily Drive quota) is permanent until someone frees space or the
+// quota resets, and the picture has already been generated (paid for) by the
+// time the upload fails - so stop after the first one instead of paying for
+// the rest of the batch to hit the same wall.
+const isDriveQuotaError = (e) =>
+  /^bridge (upload|append|update)\b.*(Limit Exceeded|storage|quota|too many times|not enough space)/i.test(String(e && e.message ? e.message : e));
+
+async function driveAlert(quiet, detail) {
+  if (quiet) return;
+  try {
+    await bridge('notify', {
+      subject: 'ACTION NEEDED: CHD review pictures cannot be saved - Google Drive refused the upload',
+      body:
+        `The design pipeline made new lifestyle pictures but Google Drive refused to save them ("${detail}"). ` +
+        `Usually this means the storage of the Google account that owns the "CHD Lifestyle Review" folder is full ` +
+        `(check https://drive.google.com/settings/storage - free some space or add storage), or a daily Drive limit ` +
+        `was reached (it clears by itself within a day).\n\n` +
+        `Submissions are safe on the responses sheet and will be processed automatically at the next run once Drive ` +
+        `accepts uploads again. Until then no new design can reach the review board.\n\n` +
+        `- CHD design pipeline (automated)`,
+    });
+    console.log('intake: drive alert emailed');
+  } catch (e) {
+    console.log(`intake: drive alert email skipped (${String(e.message).slice(0, 120)})`);
+  }
+}
+
 async function intake({ quietEmpty = false } = {}) {
   let model, textModel, imageChoice;
   try {
@@ -697,6 +725,7 @@ async function intake({ quietEmpty = false } = {}) {
   const failures = []; // styles whose generation/upload failed this run
   const categoryNotes = []; // auto-corrections / suspicious style prefixes to tell the team
   let billingStopped = false;
+  let driveStopped = ''; // first Drive-refusal message, when the run had to stop on one
   // Each design that meets a busy Gemini already waits ~6.5 min; if three in a
   // row still fail that way the service is down, so stop and leave the rest
   // pending for the next run instead of burning hours on every remaining design.
@@ -826,6 +855,11 @@ async function intake({ quietEmpty = false } = {}) {
       }
       console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
       failures.push({ style, error: String(e.message).slice(0, 200) });
+      if (isDriveQuotaError(e)) {
+        driveStopped = String(e.message).replace(/^bridge \w+:\s*/, '').slice(0, 120);
+        console.log(`intake: STOPPED - Google Drive refused the upload (${driveStopped}); the remaining designs stay pending and are retried at the next run`);
+        break;
+      }
       overloadedInARow = e.overloaded ? overloadedInARow + 1 : 0;
       if (overloadedInARow >= OVERLOAD_STOP) {
         console.log(`intake: STOPPED - Gemini stayed overloaded for ${OVERLOAD_STOP} designs in a row; the remaining designs stay pending and are retried at the next run`);
@@ -834,6 +868,7 @@ async function intake({ quietEmpty = false } = {}) {
     }
   }
   if (billingStopped) await billingAlert(quietEmpty);
+  if (driveStopped) await driveAlert(quietEmpty, driveStopped);
   console.log(`intake: done, ${processed} design(s) sent for review`);
   // A style can fail on an old broken form row and still succeed via the
   // designer's newer resubmission later in the same run - only report
@@ -900,6 +935,7 @@ async function intake({ quietEmpty = false } = {}) {
     console.log(`intake: team notification skipped (${String(e.message).slice(0, 120)}) - redeploy the bridge script to enable emails`);
   }
   if (billingStopped) process.exit(2);
+  if (driveStopped) process.exit(4);
 }
 
 // ---------------------------------------------------------------------------

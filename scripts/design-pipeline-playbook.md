@@ -54,12 +54,19 @@ Generates lifestyle images for new submissions and REDO rows.
    credits are depleted. Nothing can be generated until the owner tops up
    at https://ai.studio/projects; the script has already emailed. Report
    it plainly - do not retry.
+9. `intake: STOPPED - Google Drive refused the upload (...)` (exit code 4)
+   means the Google account that owns the "CHD Lifestyle Review" folder is
+   out of storage or hit a daily Drive limit ("Limit Exceeded: Drive"). The
+   pictures were generated but could not be saved, so the script stops after
+   the first one and has already emailed. Nothing can reach the review
+   board until the owner frees space (drive.google.com/settings/storage) or
+   the limit resets - report it plainly, do not retry in a loop.
 
 ## Recheck run (11:00 AM IST)
 
 Identical to the intake run with ONE difference: run
 `bun scripts/design-pipeline.mjs intake --quiet-empty`
-(suppresses the "nothing submitted" and billing emails so an empty
+(suppresses the "nothing submitted", billing and Drive emails so an empty
 morning does not nag twice). Designs submitted overnight are generated
 in time for the same day's 1:00 PM review and 1:30 PM publish. It may
 still be running when the 1:30 PM publish fires - that is fine.

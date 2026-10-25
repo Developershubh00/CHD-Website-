@@ -3,7 +3,8 @@
 // Google Sheets/Drive bridge call and every Gemini call from a scripted scenario, so nothing touches the network,
 // nothing is spent and no sheet or Drive file is written. It checks the wiring that scripts/tests/gemini-image.mjs
 // (pure helpers only) cannot: which model intake picks and logs, the fall-back path and its e-mail note, the
-// billing STOP (log, alert e-mail, exit code), a mistyped GEMINI_IMAGE_MODEL, key redaction in logs, the busy
+// billing STOP (log, alert e-mail, exit code), Google Drive refusing uploads (stop after the first paid picture),
+// a mistyped GEMINI_IMAGE_MODEL, key redaction in logs, the busy
 // back-off, keeping an earlier attempt when a later one fails, and the stop after three overloaded designs.
 //
 //   node scripts/tests/intake-stub.mjs               all scenarios (about half a minute)
@@ -73,7 +74,7 @@ if (url.startsWith('https://bridge.example.invalid')) {
       if (req.range === 'B:B') return out({ ok: true, values: [['style'], ...(sc.boardStyles || []).map((s) => [s])] });
       return out({ ok: true, values: req.sheetId.startsWith('13C3') ? sc.responses : sc.board });
     case 'download': return out({ ok: true, name: 'front.png', mimeType: 'image/png', base64: '${PIXEL}' });
-    case 'upload': return out({ ok: true, id: 'ID', url: 'https://drive.example/' + req.name, size: 1 });
+    case 'upload': return sc.uploadError ? out({ ok: false, error: sc.uploadError }) : out({ ok: true, id: 'ID', url: 'https://drive.example/' + req.name, size: 1 });
     case 'append': case 'update': fs.appendFileSync(H + '/sheet-writes.log', JSON.stringify(req) + '\\n'); return out({ ok: true });
     case 'notify': fs.appendFileSync(H + '/notify.log', JSON.stringify({ subject: req.subject, body: req.body }) + '\\n'); return out({ ok: true, sent: [] });
   }
@@ -218,6 +219,26 @@ try {
     const r = run({ ...base(), count: { 'gemini-3-pro-image': { error: CREDITS } } }, { args: ['--quiet-empty'] });
     t.eq(r.code, 2);
     t.has(r.out, 'intake: STOPPED - GEMINI_BILLING');
+    t.eq(r.notify.length, 0);
+  });
+
+  await scenario('Google Drive refuses the upload ("Limit Exceeded: Drive") -> stops after the first design, alert e-mail, exit 4', (t) => {
+    const r = run({ ...base(3), uploadError: 'Exception: Limit Exceeded: Drive.' });
+    t.eq(r.code, 4);
+    t.has(r.out, 'intake: FAILED CHD-CH-2401: bridge upload: Exception: Limit Exceeded: Drive.');
+    t.has(r.out, 'intake: STOPPED - Google Drive refused the upload (Exception: Limit Exceeded: Drive.)');
+    t.hasNot(r.out, 'NEW CHD-CH-2402', 'the other designs are not generated (and paid for) just to hit the same wall');
+    t.eq(imageCalls(r).length, 1, 'one picture was generated');
+    t.has(r.out, 'intake: FAILED (will retry next run): CHD-CH-2401');
+    t.has(r.out, 'intake: drive alert emailed');
+    t.has(r.notify[0]?.subject || '', 'Google Drive refused the upload');
+    t.has(r.notify[0]?.body || '', 'Limit Exceeded: Drive');
+  });
+
+  await scenario('the same Drive refusal on the 11 AM --quiet-empty recheck stops the same way but sends no alert', (t) => {
+    const r = run({ ...base(3), uploadError: 'Exception: Limit Exceeded: Drive.' }, { args: ['--quiet-empty'] });
+    t.eq(r.code, 4);
+    t.has(r.out, 'intake: STOPPED - Google Drive refused the upload');
     t.eq(r.notify.length, 0);
   });
 
