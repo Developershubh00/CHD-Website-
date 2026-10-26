@@ -73,7 +73,7 @@ if (url.startsWith('https://bridge.example.invalid')) {
     case 'read':
       if (req.range === 'B:B') return out({ ok: true, values: [['style'], ...(sc.boardStyles || []).map((s) => [s])] });
       return out({ ok: true, values: req.sheetId.startsWith('13C3') ? sc.responses : sc.board });
-    case 'download': return out({ ok: true, name: 'front.png', mimeType: 'image/png', base64: '${PIXEL}' });
+    case 'download': return sc.downloadError ? out({ ok: false, error: sc.downloadError }) : out({ ok: true, name: 'front.png', mimeType: 'image/png', base64: '${PIXEL}' });
     case 'upload': return sc.uploadError ? out({ ok: false, error: sc.uploadError }) : out({ ok: true, id: 'ID', url: 'https://drive.example/' + req.name, size: 1 });
     case 'append': case 'update': fs.appendFileSync(H + '/sheet-writes.log', JSON.stringify(req) + '\\n'); return out({ ok: true });
     case 'notify': fs.appendFileSync(H + '/notify.log', JSON.stringify({ subject: req.subject, body: req.body }) + '\\n'); return out({ ok: true, sent: [] });
@@ -233,6 +233,15 @@ try {
     t.has(r.out, 'intake: drive alert emailed');
     t.has(r.notify[0]?.subject || '', 'Google Drive refused the upload');
     t.has(r.notify[0]?.body || '', 'Limit Exceeded: Drive');
+  });
+
+  await scenario('an upload that is gone from Drive ("No item with the given ID") -> no picture paid for, team told to restore or re-submit', (t) => {
+    const r = run({ ...base(2), downloadError: 'Exception: No item with the given ID could be found. Possibly because you have not edited this item or you do not have permission to access it.' }, { args: ['--quiet-empty'] });
+    t.eq(r.code, 0);
+    t.eq(imageCalls(r).length, 0, 'nothing generated');
+    t.has(r.out, 'intake: FAILED CHD-CH-2401: bridge download: Exception: No item with the given ID');
+    t.has(r.notify[0]?.subject || '', 'action needed - 2 submission(s) cannot be processed');
+    t.has(r.notify[0]?.body || '', 'CHD-CH-2401: the uploaded image can no longer be opened in Google Drive');
   });
 
   await scenario('the same Drive refusal on the 11 AM --quiet-empty recheck stops the same way but sends no alert', (t) => {

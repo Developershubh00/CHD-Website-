@@ -633,6 +633,9 @@ function teamFixFor(error) {
   if (/no front image/i.test(error)) {
     return 'the form entry has no front card image attached - submit a fresh entry with the image included';
   }
+  if (/^bridge download\b.*(No item with the given ID could be found|do not have permission to access)/i.test(error)) {
+    return 'the uploaded image can no longer be opened in Google Drive (it was deleted, or its sharing changed) - restore it from the Drive Trash if it is there, otherwise submit a fresh form entry with the same style number';
+  }
   return null; // transient/system error - retried automatically, nothing for the team to do
 }
 
