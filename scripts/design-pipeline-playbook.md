@@ -106,6 +106,15 @@ empty. Runs in the same long-lived session (which holds push credentials).
   and the site shows it right after the front image. A broken back
   upload never blocks the product — it publishes without it and the
   team is emailed what to fix.
+- The pipeline finds every picture by its Drive file ID (Responses sheet
+  columns K/L, review board columns E/F). Moving a file inside Drive keeps
+  its ID; copying it to another account and deleting the original breaks
+  the link (`bridge download ... No item with the given ID could be
+  found`). Keep the form, both sheets, "CHD — New Design Upload (File
+  responses)" and "CHD Lifestyle Review" out of any Drive migration or
+  cleanup. Repair (done on 27 Oct 2026): copy the file back into the same
+  folder as vikramjaglan11.official@gmail.com, then point the sheet cell at
+  the copy's new ID.
 - Never edit pipeline scripts, website code, or other products' files.
 - The review board is the single source of truth:
   https://docs.google.com/spreadsheets/d/1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is

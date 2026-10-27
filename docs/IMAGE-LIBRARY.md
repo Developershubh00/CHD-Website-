@@ -87,7 +87,7 @@ One design's day, in India time. The only human step is approving; the rest runs
 
 | When | What happens | Where the design is afterwards |
 |---|---|---|
-| Any time | A designer submits the Google Form. | The full-size original pictures stay in the Drive folder **CHD Design Uploads**. |
+| Any time | A designer submits the Google Form. | The full-size original pictures stay in the form's own Drive folder **CHD — New Design Upload (File responses)**, one subfolder per upload question (Front card, Close-up, Back Side). Only the official account can open it. |
 | 9 PM | The intake run (`design-pipeline.mjs intake`) makes the lifestyle picture. An 11 AM recheck run picks up anything submitted late. | Review copies go into the Drive folder **CHD Lifestyle Review**, with a row on the review board. |
 | By 1 PM next day | The team sets the row's STATUS to APPROVED (or REDO, with remarks). | Nothing is published unless it says exactly APPROVED. |
 | 1:30 PM | The publish run (`design-pipeline.mjs publish --commit`) writes the pictures and specs, refreshes `library-index.json`, checks that the website still builds, and pushes it all to `main` in one commit. | The website (rebuilt after the push), GitHub, and the new `library-index.json`. The team gets the "now LIVE" email. |
@@ -98,7 +98,8 @@ One design's day, in India time. The only human step is approving; the rest runs
   up on the next day's run, or you can run `sync` (below) once the publish has landed. Nothing is lost either way.
 - **What the backup holds.** The pictures exactly as they are on the website: the publish run shrinks every upload to
   at most 2400 pixels on the long edge and compresses it. The print-size originals are not in the backup; they stay
-  in **CHD Design Uploads**, so keep that folder.
+  in **CHD — New Design Upload (File responses)**, so keep that folder and its subfolders. The Responses sheet links
+  to those files by ID: a moved file keeps working, but a copied or deleted one breaks the link.
 - **A design sent back and approved again** is updated in place (same slide number). Drive copies what changed, and a
   picture of the same name that changed size is replaced (the old copy goes to the Drive Trash). The Backed up date
   changes; it is not listed as a new design in the email.

@@ -7,7 +7,10 @@
  *   1. A Google Form ("CHD — New Design Upload") with every question the
  *      website's product pages need, with dropdowns and required fields so a
  *      designer cannot submit something incomplete.
- *   2. A Drive folder ("CHD Design Uploads") that receives the images.
+ *   2. A Drive folder ("CHD Design Uploads") for the upload questions. Google
+ *      Forms ignores it in practice: uploads land in the form's own
+ *      "CHD — New Design Upload (File responses)" folder, one subfolder per
+ *      question, and that is where the Responses sheet links point.
  *   3. A response Google Sheet, linked to the form, that the daily pipeline
  *      reads to find new designs.
  *
