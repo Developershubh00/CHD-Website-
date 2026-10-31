@@ -23,7 +23,8 @@
  * (scripts/chd-pipeline-bridge.gs) so no Google credentials live here.
  *
  * Env: CHD_BRIDGE_URL, CHD_BRIDGE_TOKEN, GEMINI_API_KEY
- *      GEMINI_IMAGE_MODEL, GEMINI_TEXT_MODEL (optional overrides)
+ *      GEMINI_IMAGE_MODEL, GEMINI_TEXT_MODEL (optional overrides; images default to the
+ *      Pro image model, e.g. GEMINI_IMAGE_MODEL=gemini-3.1-flash-image pins Flash)
  *
  * Usage (from the repo root):
  *   bun scripts/design-pipeline.mjs intake
@@ -36,6 +37,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { writeCardImage } from './lib/card-image.mjs';
+import { chooseImageModel, isBillingError, pickFinalImagePart, retryDelaySeconds } from './lib/gemini-image.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -204,6 +206,14 @@ const BRIDGE_URL = clean(process.env.CHD_BRIDGE_URL);
 const BRIDGE_TOKEN = clean(process.env.CHD_BRIDGE_TOKEN);
 const GEMINI_KEY = clean(process.env.GEMINI_API_KEY);
 
+// Keys and tokens must never reach logs, board remarks or emails: curl's
+// "Command failed: curl ... ?key=<KEY>" error text contains the Gemini key.
+const redact = (text) => {
+  let out = String(text);
+  for (const secret of [GEMINI_KEY, BRIDGE_TOKEN]) if (secret && secret.length > 8) out = out.split(secret).join('<redacted>');
+  return out.replace(/([?&]key=)[^&\s"']+/g, '$1<redacted>');
+};
+
 // All HTTP goes through curl: bun's native fetch gets connection resets
 // behind the sandbox egress proxy, curl is reliable there.
 import { execFileSync } from 'child_process';
@@ -224,7 +234,7 @@ function curlJson(url, body) {
         maxBuffer: 256 * 1024 * 1024,
       });
     } catch (e) {
-      if (attempt > WAITS.length) throw e;
+      if (attempt > WAITS.length) throw new Error(redact(e.message));
       console.log(`  http request failed, retrying in ${WAITS[attempt - 1]}s (${attempt}/${WAITS.length})...`);
       execFileSync('sleep', [String(WAITS[attempt - 1])]);
       continue;
@@ -248,21 +258,47 @@ async function bridge(op, payload = {}) {
 }
 
 // Google retires older models for newer API projects while still listing
-// them ("no longer available to new users"), so prefer the newest stable
-// version and live-ping text models before trusting them.
+// them ("no longer available to new users"), so text models are live-pinged
+// before being trusted, and image models are existence-probed (free
+// countTokens call) before use. The versioned sort below is for text models.
 const geminiVersion = (n) => parseFloat((n.match(/gemini-([\d.]+)/) || [])[1] || '0');
 
+// The key's model list, in one page (the API default is 50 and this key has
+// more); a failed call is reported as such instead of looking like "no models".
+function geminiModelNames() {
+  const listing = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000&key=${GEMINI_KEY}`);
+  if (listing.error) {
+    if (isBillingError(listing.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(listing.error).slice(0, 200)}`);
+    throw new Error(`could not list Gemini models: ${redact(JSON.stringify(listing.error)).slice(0, 300)}`);
+  }
+  const names = (listing.models || []).map((m) => m.name.replace(/^models\//, ''));
+  if (!names.length) throw new Error('could not list Gemini models: the list came back empty');
+  return names;
+}
+
+// Images are made by the Pro image model (gemini-3-pro-image, "Nano Banana
+// Pro"). If no Pro model is listed and countable on the key, it falls back to
+// Flash and says so loudly (log line + a note in the team email). A Pro model
+// that passes the free existence check but then fails to generate is NOT
+// swapped out - those designs fail and are retried at the next run.
+// GEMINI_IMAGE_MODEL pins a specific model (e.g. gemini-3.1-flash-image to
+// roll back); it must exist in the key's model list but is not probed.
 async function geminiImageModel() {
-  if (process.env.GEMINI_IMAGE_MODEL) return clean(process.env.GEMINI_IMAGE_MODEL);
-  const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
-  const names = models.map((m) => m.name.replace(/^models\//, ''));
-  const stable = names
-    .filter((n) => /^gemini-[\d.]+-flash-image$/.test(n))
-    .sort((a, b) => geminiVersion(b) - geminiVersion(a));
-  const loose = names.filter((n) => n.includes('image') && !n.includes('imagen'));
-  const pick = stable[0] || loose[0];
-  if (!pick) throw new Error('no Gemini image-generation model available');
-  return pick;
+  const names = geminiModelNames();
+  return chooseImageModel(names, {
+    override: process.env.GEMINI_IMAGE_MODEL,
+    // Listed does not mean callable. Only a definite "not found / forbidden /
+    // bad request" rules a model out; a transient blip must not demote Pro.
+    probe: async (model) => {
+      const body = curlJson(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:countTokens?key=${GEMINI_KEY}`,
+        { contents: [{ parts: [{ text: 'ping' }] }] });
+      if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
+      const unusable = body.error && [400, 403, 404].includes(body.error.code);
+      if (unusable) console.log(`  image model ${model} not usable on this key (HTTP ${body.error.code}: ${redact(body.error.message).slice(0, 100)}) - trying the next one`);
+      return !unusable;
+    },
+  });
 }
 
 const FRAMING_RULES =
@@ -276,12 +312,12 @@ const FRAMING_RULES =
 
 // "Your prepayment credits are depleted" comes back as a 429 like a rate
 // limit, but it is permanent until someone tops up - never retry it, and
-// tell people instead of silently doing nothing for days.
-const isBillingError = (e) => /prepayment credits|credits are depleted|billing/i.test(String(e && e.message ? e.message : JSON.stringify(e || '')));
+// tell people instead of silently doing nothing for days. (isBillingError
+// lives in lib/gemini-image.mjs and deliberately does NOT match Google's
+// ordinary quota 429, whose text also says "check your plan and billing".)
 
 function geminiTextModel() {
-  const { models = [] } = curlJson(`https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_KEY}`);
-  const names = models.map((m) => m.name.replace(/^models\//, ''));
+  const names = geminiModelNames();
   const versioned = names
     .filter((n) => /^gemini-[\d.]+-flash$/.test(n))
     .sort((a, b) => geminiVersion(b) - geminiVersion(a));
@@ -369,6 +405,11 @@ function verifyLifestyle(textModel, frontB64, frontMime, genB64, dims) {
   return { fidelity: Number(out.fidelity) || 0, shapeOk: !!out.shape_ok, issues: out.issues || [] };
 }
 
+// Waits (seconds) between retries of a busy/overloaded model: ~6.5 min of
+// patience in total, since image models can stay overloaded for minutes. A
+// retry delay Google reports in the error (RetryInfo), when longer, is honoured.
+const BUSY_WAITS = [30, 60, 120, 180];
+
 async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   const request = {
     contents: [{ parts: [{ text: prompt + FRAMING_RULES }, { inlineData: { mimeType, data: imageBase64 } }] }],
@@ -378,34 +419,54 @@ async function generateLifestyle(model, prompt, imageBase64, mimeType) {
   };
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`;
   let body;
+  let pick = null;
+  let noImageRetries = 0; // empty replies and busy errors have separate retry budgets
+  let busyRetries = 0;
+  let overloaded = false;
   // Transient 5xx/429s (model overloaded, deadline expired) are common at
   // peak hours - retry with growing waits before treating them as fatal.
-  for (let attempt = 1; ; attempt++) {
+  for (;;) {
     body = curlJson(url, request);
     if (body.error && /imageSize/i.test(JSON.stringify(body.error)) && request.generationConfig?.imageConfig?.imageSize) {
       // API surface without imageSize - drop just that and retry
+      console.log(`  gemini ${model}: imageSize not accepted - continuing without it (output will be upscaled to 2048px)`);
       delete request.generationConfig.imageConfig.imageSize;
       body = curlJson(url, request);
     }
     if (body.error && /imageConfig|aspectRatio|Unknown name/i.test(JSON.stringify(body.error))) {
       // older API surface without imageConfig - retry without it
+      console.log(`  gemini ${model}: imageConfig not accepted - continuing without it (square crop and upscale will be applied)`);
       delete request.generationConfig;
       body = curlJson(url, request);
     }
     if (body.error && isBillingError(body.error)) throw new Error(`GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`);
-    const transient = body.error && (
-      [429, 500, 503, 504].includes(body.error.code) ||
-      /UNAVAILABLE|Deadline|overloaded|RESOURCE_EXHAUSTED|INTERNAL/i.test(JSON.stringify(body.error)));
-    if (!transient || attempt >= 4) break;
-    const waitSec = attempt * 25;
-    console.log(`  gemini busy (${body.error.code}), waiting ${waitSec}s then retrying (${attempt}/4)...`);
+    let waitSec = 0;
+    if (body.error) {
+      const transient = [429, 500, 503, 504].includes(body.error.code) ||
+        /UNAVAILABLE|Deadline|overloaded|RESOURCE_EXHAUSTED|INTERNAL/i.test(JSON.stringify(body.error));
+      overloaded = transient;
+      if (!transient || busyRetries >= BUSY_WAITS.length) break;
+      waitSec = Math.max(BUSY_WAITS[busyRetries], retryDelaySeconds(body.error));
+      busyRetries++;
+      console.log(`  gemini ${model} busy (${body.error.code}), waiting ${waitSec}s then retrying (${busyRetries}/${BUSY_WAITS.length})...`);
+    } else {
+      // The finished picture is the last non-draft image part; a thinking model
+      // can return interim "thought" drafts before it.
+      pick = pickFinalImagePart(body);
+      if (pick.base64) break;
+      // A safety/policy block will not change on retry; an empty or text-only reply can.
+      const blocked = pick.summary.blockReason || /SAFETY|PROHIBITED|BLOCK|RECITATION|SPII|LANGUAGE/i.test(pick.summary.finishReason || '');
+      if (blocked || noImageRetries >= 2) break;
+      noImageRetries++;
+      waitSec = 5;
+      console.log(`  gemini ${model} returned no final image (${JSON.stringify(pick.summary)}), retrying (${noImageRetries}/2)...`);
+    }
     await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
   }
-  if (body.error) throw new Error(`gemini error: ${JSON.stringify(body.error).slice(0, 400)}`);
-  const parts = body?.candidates?.[0]?.content?.parts || [];
-  const img = parts.find((p) => p.inlineData?.data);
-  if (!img) throw new Error(`gemini returned no image: ${JSON.stringify(body).slice(0, 400)}`);
-  return ensureMinSize(await squareCrop(Buffer.from(img.inlineData.data, 'base64')));
+  // `overloaded` lets intake tell "Gemini is busy" (worth backing off from the whole batch) from a one-off failure
+  if (body.error) throw Object.assign(new Error(`gemini ${model} error: ${JSON.stringify(body.error).slice(0, 400)}`), { overloaded });
+  if (!pick?.base64) throw new Error(`gemini ${model} returned no image: ${JSON.stringify(pick?.summary || {})}`);
+  return ensureMinSize(await squareCrop(Buffer.from(pick.base64, 'base64')));
 }
 
 // Safety net: if the model still returns a non-square image, centre-crop to
@@ -444,7 +505,7 @@ async function ensureMinSize(buffer) {
   }
 }
 
-// The verifier grades a faithful render with normal scene lighting as 7/10
+// (Calibrated on Flash renders.) The verifier grades a faithful render with normal scene lighting as 7/10
 // ("minor tone variation"); 8+ is rare. Accepting at 7 makes most designs a
 // single generation instead of always burning three attempts.
 const ACCEPT_FIDELITY = 7;
@@ -469,7 +530,16 @@ async function generateVerified(imageModel, textModel, prompt, front, dims, styl
   let best = null;
   let corrections = '';
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const buf = await generateLifestyle(imageModel, prompt + designSpec + corrections, front.base64, front.mimeType);
+    let buf;
+    try {
+      buf = await generateLifestyle(imageModel, prompt + designSpec + corrections, front.base64, front.mimeType);
+    } catch (e) {
+      // A later attempt failing (overload, empty reply) must not throw away an
+      // earlier attempt that was already generated and paid for.
+      if (!best || /GEMINI_BILLING/.test(String(e.message))) throw e;
+      console.log(`  ${style} attempt ${attempt}: generation failed (${String(e.message).slice(0, 160)}) - keeping the best earlier attempt`);
+      break;
+    }
     let check;
     try {
       check = verifyLifestyle(textModel, front.base64, front.mimeType, buf.toString('base64'), dims);
@@ -563,6 +633,9 @@ function teamFixFor(error) {
   if (/no front image/i.test(error)) {
     return 'the form entry has no front card image attached - submit a fresh entry with the image included';
   }
+  if (/^bridge download\b.*(No item with the given ID could be found|do not have permission to access)/i.test(error)) {
+    return 'the uploaded image can no longer be opened in Google Drive (it was deleted, or its sharing changed) - restore it from the Drive Trash if it is there, otherwise submit a fresh form entry with the same style number';
+  }
   return null; // transient/system error - retried automatically, nothing for the team to do
 }
 
@@ -586,10 +659,39 @@ async function billingAlert(quiet) {
   }
 }
 
-async function intake({ quietEmpty = false } = {}) {
-  let model, textModel;
+// Google Drive refusing a write ("Exception: Limit Exceeded: Drive", storage
+// full, daily Drive quota) is permanent until someone frees space or the
+// quota resets, and the picture has already been generated (paid for) by the
+// time the upload fails - so stop after the first one instead of paying for
+// the rest of the batch to hit the same wall.
+const isDriveQuotaError = (e) =>
+  /^bridge (upload|append|update)\b.*(Limit Exceeded|storage|quota|too many times|not enough space)/i.test(String(e && e.message ? e.message : e));
+
+async function driveAlert(quiet, detail) {
+  if (quiet) return;
   try {
-    model = await geminiImageModel();
+    await bridge('notify', {
+      subject: 'ACTION NEEDED: CHD review pictures cannot be saved - Google Drive refused the upload',
+      body:
+        `The design pipeline made new lifestyle pictures but Google Drive refused to save them ("${detail}"). ` +
+        `Usually this means the storage of the Google account that owns the "CHD Lifestyle Review" folder is full ` +
+        `(check https://drive.google.com/settings/storage - free some space or add storage), or a daily Drive limit ` +
+        `was reached (it clears by itself within a day).\n\n` +
+        `Submissions are safe on the responses sheet and will be processed automatically at the next run once Drive ` +
+        `accepts uploads again. Until then no new design can reach the review board.\n\n` +
+        `- CHD design pipeline (automated)`,
+    });
+    console.log('intake: drive alert emailed');
+  } catch (e) {
+    console.log(`intake: drive alert email skipped (${String(e.message).slice(0, 120)})`);
+  }
+}
+
+async function intake({ quietEmpty = false } = {}) {
+  let model, textModel, imageChoice;
+  try {
+    imageChoice = await geminiImageModel();
+    model = imageChoice.model;
     textModel = geminiTextModel();
   } catch (e) {
     if (isBillingError(e) || /GEMINI_BILLING/.test(String(e.message))) {
@@ -597,9 +699,18 @@ async function intake({ quietEmpty = false } = {}) {
       await billingAlert(quietEmpty);
       process.exit(2);
     }
+    if (/GEMINI_IMAGE_MODEL "/.test(String(e.message))) {
+      // a typo or retired id in the override: nothing to retry, the owner must fix the setting
+      console.log(`intake: STOPPED - ${e.message}`);
+      process.exit(3);
+    }
     throw e;
   }
-  console.log(`intake: image model ${model}, analysis model ${textModel}`);
+  console.log(`intake: image model ${model} (${imageChoice.tier}), analysis model ${textModel}`);
+  if (imageChoice.fellBack) {
+    console.log(`intake: WARNING no usable Pro image model - FELL BACK to ${model}` +
+      (imageChoice.skipped.length ? ` (not usable: ${imageChoice.skipped.join(', ')})` : ''));
+  }
 
   const { values: responses } = await bridge('read', { sheetId: RESPONSES_SHEET });
   if (responses.length < 2) { console.log('intake: no submissions in the sheet'); return; }
@@ -617,6 +728,12 @@ async function intake({ quietEmpty = false } = {}) {
   const failures = []; // styles whose generation/upload failed this run
   const categoryNotes = []; // auto-corrections / suspicious style prefixes to tell the team
   let billingStopped = false;
+  let driveStopped = ''; // first Drive-refusal message, when the run had to stop on one
+  // Each design that meets a busy Gemini already waits ~6.5 min; if three in a
+  // row still fail that way the service is down, so stop and leave the rest
+  // pending for the next run instead of burning hours on every remaining design.
+  const OVERLOAD_STOP = 3;
+  let overloadedInARow = 0;
   for (let r = 1; r < responses.length; r++) {
     const row = responses[r];
     const style = String(row[col.style] || '').trim();
@@ -676,9 +793,11 @@ async function intake({ quietEmpty = false } = {}) {
       const dims = parseInches(String(row[col.size] || ''));
       const result = await generateVerified(model, textModel, prompt, front, dims, style);
       const lifestyle = result.buf;
+      // The model name sits INSIDE the [auto-check ...] tag on purpose: the REDO
+      // clean-up strips only that tag, so it cannot pile up across redos.
       const qcNote = (result.check.unverified
-        ? `[auto-check UNAVAILABLE - please verify shape/fidelity manually]`
-        : `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'}]`)
+        ? `[auto-check UNAVAILABLE | model ${model} - please verify shape/fidelity manually]`
+        : `[auto-check ${result.check.fidelity}/10${result.check.shapeOk ? '' : ', shape flagged'} | model ${model}]`)
         + (resolved.note ? ` [${resolved.note}]` : '');
       if (resolved.note) categoryNotes.push(`${style}: ${resolved.note}`);
 
@@ -726,6 +845,7 @@ async function intake({ quietEmpty = false } = {}) {
         }
       }
       processed++;
+      overloadedInARow = 0;
       // Guard against duplicate form entries for the same style within one
       // run (e.g. a designer resubmitting after a broken upload): once a
       // style lands on the board, later rows with the same style are skipped.
@@ -738,9 +858,20 @@ async function intake({ quietEmpty = false } = {}) {
       }
       console.log(`intake: FAILED ${style}: ${String(e.message).slice(0, 300)}`);
       failures.push({ style, error: String(e.message).slice(0, 200) });
+      if (isDriveQuotaError(e)) {
+        driveStopped = String(e.message).replace(/^bridge \w+:\s*/, '').slice(0, 120);
+        console.log(`intake: STOPPED - Google Drive refused the upload (${driveStopped}); the remaining designs stay pending and are retried at the next run`);
+        break;
+      }
+      overloadedInARow = e.overloaded ? overloadedInARow + 1 : 0;
+      if (overloadedInARow >= OVERLOAD_STOP) {
+        console.log(`intake: STOPPED - Gemini stayed overloaded for ${OVERLOAD_STOP} designs in a row; the remaining designs stay pending and are retried at the next run`);
+        break;
+      }
     }
   }
   if (billingStopped) await billingAlert(quietEmpty);
+  if (driveStopped) await driveAlert(quietEmpty, driveStopped);
   console.log(`intake: done, ${processed} design(s) sent for review`);
   // A style can fail on an old broken form row and still succeed via the
   // designer's newer resubmission later in the same run - only report
@@ -766,7 +897,10 @@ async function intake({ quietEmpty = false } = {}) {
           `${boardUrl}\n\n` +
           `Please review before 1:00 PM: set STATUS to APPROVED to publish in the 1:30 PM run, ` +
           `or REDO with remarks to regenerate tonight. The Remarks column shows each image's ` +
-          `automatic quality check as [auto-check N/10].` +
+          `automatic quality check and the image model that made it as [auto-check N/10 | model ...].` +
+          (imageChoice.fellBack
+            ? `\n\nNote: the Pro image model was not available on this run, so these images were made with ${model} instead.`
+            : '') +
           (transient.length
             ? `\n\nNote: ${transient.length} design(s) hit a temporary error this run and will be retried automatically at the next check: ${transient.map((f) => f.style).join(', ')}.`
             : '') +
@@ -804,6 +938,7 @@ async function intake({ quietEmpty = false } = {}) {
     console.log(`intake: team notification skipped (${String(e.message).slice(0, 120)}) - redeploy the bridge script to enable emails`);
   }
   if (billingStopped) process.exit(2);
+  if (driveStopped) process.exit(4);
 }
 
 // ---------------------------------------------------------------------------
@@ -959,6 +1094,14 @@ async function publish({ commit }) {
     execSync('bun run build', { cwd: REPO, stdio: 'inherit' });
     const names = published.map((p) => p.style).join(', ');
     execSync('git add src/assets public/images', { cwd: REPO, stdio: 'inherit' });
+    // Keep library-index.json (read by the Google Drive backup) in step with the library. Never blocks a publish.
+    try {
+      const { buildIndex, serializeIndex } = await import('./lib/library-index.mjs');
+      fs.writeFileSync(path.join(REPO, 'library-index.json'), serializeIndex(buildIndex(REPO)));
+      execSync('git add library-index.json', { cwd: REPO, stdio: 'inherit' });
+    } catch (e) {
+      console.log(`publish: library-index.json not updated (${String(e.message).slice(0, 120)})`);
+    }
     // A previous run may have committed these designs but failed to push (e.g.
     // a GitHub outage or a lapsed credential). Re-staging then produces no
     // changes, and `git commit` would abort the whole run - so commit only

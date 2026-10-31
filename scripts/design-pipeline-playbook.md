@@ -29,25 +29,44 @@ Generates lifestyle images for new submissions and REDO rows.
    stash safely first).
 2. Confirm env vars: `CHD_BRIDGE_URL`, `CHD_BRIDGE_TOKEN`,
    `GEMINI_API_KEY`. Missing → STOP and report which.
+   (`GEMINI_IMAGE_MODEL` is optional. By default images are made by the
+   Pro image model, picked automatically and logged as
+   `intake: image model gemini-3-pro-image (pro)`. Setting the variable
+   pins a model, e.g. `gemini-3.1-flash-image` to roll back to Flash.)
 3. `bun install` only if node_modules is missing or sharp fails to load.
 4. `bun scripts/design-pipeline.mjs intake` in the background; monitor to
-   completion. Large batches take hours (roughly 2-5 min per design) -
-   never stop it early.
+   completion. Large batches take hours (roughly 2-5 min per design on
+   Flash; Pro is a little slower - re-measure) - never stop it early.
 5. Per-design `FAILED` lines are normal (retried next run). If the
    process dies before `intake: done`, re-run once.
 6. The script emails the team itself: images ready / nothing submitted /
    action needed (bad files, category checks) / billing stopped. If it
    logs "notification skipped", mention that in your report.
-7. `intake: STOPPED ... GEMINI_BILLING` means the Gemini project's prepaid
+7. If the log says `WARNING no usable Pro image model - FELL BACK to ...`,
+   the designs of that run were made with the Flash model and the team
+   email says so - mention it in your report.
+   `intake: STOPPED - GEMINI_IMAGE_MODEL "..." is not in this API key's model
+   list` (exit code 3) means the override is mistyped or retired: nothing
+   can be retried, report it. `intake: STOPPED - Gemini stayed overloaded
+   for 3 designs in a row` means Gemini itself is struggling: the rest stay
+   pending and the next run retries them.
+8. `intake: STOPPED ... GEMINI_BILLING` means the Gemini project's prepaid
    credits are depleted. Nothing can be generated until the owner tops up
    at https://ai.studio/projects; the script has already emailed. Report
    it plainly - do not retry.
+9. `intake: STOPPED - Google Drive refused the upload (...)` (exit code 4)
+   means the Google account that owns the "CHD Lifestyle Review" folder is
+   out of storage or hit a daily Drive limit ("Limit Exceeded: Drive"). The
+   pictures were generated but could not be saved, so the script stops after
+   the first one and has already emailed. Nothing can reach the review
+   board until the owner frees space (drive.google.com/settings/storage) or
+   the limit resets - report it plainly, do not retry in a loop.
 
 ## Recheck run (11:00 AM IST)
 
 Identical to the intake run with ONE difference: run
 `bun scripts/design-pipeline.mjs intake --quiet-empty`
-(suppresses the "nothing submitted" and billing emails so an empty
+(suppresses the "nothing submitted", billing and Drive emails so an empty
 morning does not nag twice). Designs submitted overnight are generated
 in time for the same day's 1:00 PM review and 1:30 PM publish. It may
 still be running when the 1:30 PM publish fires - that is fine.
@@ -87,6 +106,15 @@ empty. Runs in the same long-lived session (which holds push credentials).
   and the site shows it right after the front image. A broken back
   upload never blocks the product — it publishes without it and the
   team is emailed what to fix.
+- The pipeline finds every picture by its Drive file ID (Responses sheet
+  columns K/L, review board columns E/F). Moving a file inside Drive keeps
+  its ID; copying it to another account and deleting the original breaks
+  the link (`bridge download ... No item with the given ID could be
+  found`). Keep the form, both sheets, "CHD — New Design Upload (File
+  responses)" and "CHD Lifestyle Review" out of any Drive migration or
+  cleanup. Repair (done on 27 Oct 2026): copy the file back into the same
+  folder as vikramjaglan11.official@gmail.com, then point the sheet cell at
+  the copy's new ID.
 - Never edit pipeline scripts, website code, or other products' files.
 - The review board is the single source of truth:
   https://docs.google.com/spreadsheets/d/1xfut34jDvryqJd8Rpp7rV71WFUVY7X7pqRu0LfAr3Is
