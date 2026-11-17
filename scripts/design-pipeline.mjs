@@ -327,16 +327,18 @@ function geminiTextModel() {
     ...versioned,
     ...names.filter((n) => n.includes('flash') && !n.includes('image') && !n.includes('live') && !n.includes('tts')),
   ])].filter((n) => n && (names.includes(n) || n === clean(process.env.GEMINI_TEXT_MODEL)));
+  let last = '';
   for (const candidate of candidates) {
     try {
       geminiCall(candidate, [{ text: 'Reply with the single word: ok' }]);
       return candidate;
     } catch (e) {
-      if (isBillingError(e)) throw new Error(`GEMINI_BILLING: ${String(e.message).slice(0, 200)}`);
-      console.log(`  text model ${candidate} unavailable, trying next (${String(e.message).slice(0, 100)})`);
+      if (isBillingError(e) || /GEMINI_BILLING/.test(String(e.message))) throw new Error(`GEMINI_BILLING: ${String(e.message).replace(/^GEMINI_BILLING:\s*/, '').slice(0, 200)}`);
+      last = String(e.message).slice(0, 100);
+      console.log(`  text model ${candidate} unavailable, trying next (${last})`);
     }
   }
-  throw new Error('no working Gemini text model found');
+  throw Object.assign(new Error(`no working Gemini text model found${last ? ` (last: ${last})` : ''}`), { noTextModel: true });
 }
 
 function geminiCall(model, parts) {
@@ -688,11 +690,10 @@ async function driveAlert(quiet, detail) {
 }
 
 async function intake({ quietEmpty = false } = {}) {
-  let model, textModel, imageChoice;
+  let model, imageChoice;
   try {
     imageChoice = await geminiImageModel();
     model = imageChoice.model;
-    textModel = geminiTextModel();
   } catch (e) {
     if (isBillingError(e) || /GEMINI_BILLING/.test(String(e.message))) {
       console.log(`intake: STOPPED - ${e.message}`);
@@ -706,7 +707,19 @@ async function intake({ quietEmpty = false } = {}) {
     }
     throw e;
   }
-  console.log(`intake: image model ${model} (${imageChoice.tier}), analysis model ${textModel}`);
+  console.log(`intake: image model ${model} (${imageChoice.tier})`);
+  // The analysis (text) model is live-pinged only once a design actually needs
+  // it: an empty run makes no Gemini text calls, and a spell where every text
+  // model is busy stops the run cleanly instead of crashing before the sheet
+  // is even read.
+  let textModel = null;
+  const analysisModel = () => {
+    if (!textModel) {
+      textModel = geminiTextModel();
+      console.log(`intake: analysis model ${textModel}`);
+    }
+    return textModel;
+  };
   if (imageChoice.fellBack) {
     console.log(`intake: WARNING no usable Pro image model - FELL BACK to ${model}` +
       (imageChoice.skipped.length ? ` (not usable: ${imageChoice.skipped.join(', ')})` : ''));
@@ -791,7 +804,7 @@ async function intake({ quietEmpty = false } = {}) {
         [designerNotes, redoNotes].filter(Boolean).join('. '));
 
       const dims = parseInches(String(row[col.size] || ''));
-      const result = await generateVerified(model, textModel, prompt, front, dims, style);
+      const result = await generateVerified(model, analysisModel(), prompt, front, dims, style);
       const lifestyle = result.buf;
       // The model name sits INSIDE the [auto-check ...] tag on purpose: the REDO
       // clean-up strips only that tag, so it cannot pile up across redos.
@@ -861,6 +874,11 @@ async function intake({ quietEmpty = false } = {}) {
       if (isDriveQuotaError(e)) {
         driveStopped = String(e.message).replace(/^bridge \w+:\s*/, '').slice(0, 120);
         console.log(`intake: STOPPED - Google Drive refused the upload (${driveStopped}); the remaining designs stay pending and are retried at the next run`);
+        break;
+      }
+      if (e.noTextModel) {
+        // every design needs the analysis model, so the rest would fail the same way
+        console.log('intake: STOPPED - no Gemini text model answered (all busy or unavailable); the remaining designs stay pending and are retried at the next run');
         break;
       }
       overloadedInARow = e.overloaded ? overloadedInARow + 1 : 0;

@@ -61,6 +61,12 @@ Generates lifestyle images for new submissions and REDO rows.
    the first one and has already emailed. Nothing can reach the review
    board until the owner frees space (drive.google.com/settings/storage) or
    the limit resets - report it plainly, do not retry in a loop.
+10. `intake: STOPPED - no Gemini text model answered (all busy or
+   unavailable)` means Google's text models were all overloaded when the
+   first pending design needed one (the analysis model is picked only then,
+   so an empty run never calls Gemini text at all). Nothing was generated or
+   paid for; every pending design stays pending and the next run retries it.
+   Report it - it is Google-side congestion, not a pipeline fault.
 
 ## Recheck run (11:00 AM IST)
 

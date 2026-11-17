@@ -5,7 +5,8 @@
 // (pure helpers only) cannot: which model intake picks and logs, the fall-back path and its e-mail note, the
 // billing STOP (log, alert e-mail, exit code), Google Drive refusing uploads (stop after the first paid picture),
 // a mistyped GEMINI_IMAGE_MODEL, key redaction in logs, the busy
-// back-off, keeping an earlier attempt when a later one fails, and the stop after three overloaded designs.
+// back-off, keeping an earlier attempt when a later one fails, the stop after three overloaded designs, and the
+// analysis (text) model being picked only when a design needs it (an empty run makes no text call; all-busy stops cleanly).
 //
 //   node scripts/tests/intake-stub.mjs               all scenarios (about half a minute)
 //   node scripts/tests/intake-stub.mjs --only=<text>  only scenarios whose name contains <text>
@@ -343,6 +344,35 @@ try {
     const r = run({ ...base(4), 'gen:gemini-3-pro-image': [{ error: { code: 400, message: 'Invalid argument' } }, { error: { code: 400, message: 'Invalid argument' } }, okImage] });
     t.hasNot(r.out, 'stayed overloaded');
     t.has(r.out, 'NEW CHD-CH-2404');
+  });
+
+  await scenario('an empty run (every submission already on the board) makes no Gemini text call at all', (t) => {
+    const r = run({ ...base(1), board: [BOARD_HDR, ['2026-10-22', 'CHD-CH-2401', 'Cushions', 'Designer', '', '', '', '', '']] });
+    t.eq(r.code, 0);
+    t.has(r.out, 'intake: NO NEW DESIGNS');
+    t.hasNot(r.out, 'analysis model');
+    t.eq(r.requests.filter((q) => q.gemini === 'generateContent').length, 0, 'no generateContent call');
+  });
+
+  await scenario('every text model busy -> the run stops cleanly (exit 0, no stack trace, no picture paid for) and the designs stay pending', (t) => {
+    const r = run({ ...base(3), textError: busy.error });
+    t.eq(r.code, 0);
+    t.has(r.out, 'intake: STOPPED - no Gemini text model answered');
+    t.has(r.out, 'intake: done, 0 design(s) sent for review');
+    t.has(r.out, 'intake: FAILED (will retry next run): CHD-CH-2401');
+    t.hasNot(r.out, 'NEW CHD-CH-2402', 'the other designs are not tried');
+    t.eq(imageCalls(r).length, 0, 'no image was generated');
+    t.hasNot(r.out, '    at ', 'no stack trace');
+    t.eq(r.notify.length, 0, 'no e-mail claims anything is ready or missing');
+  });
+
+  await scenario('credits depleted when the analysis model is first needed -> STOPPED, billing alert e-mail, exit 2', (t) => {
+    const r = run({ ...base(2), textError: CREDITS });
+    t.eq(r.code, 2);
+    t.has(r.out, 'GEMINI_BILLING');
+    t.has(r.out, 'intake: billing alert emailed');
+    t.hasNot(r.out, 'NEW CHD-CH-2402');
+    t.eq(imageCalls(r).length, 0);
   });
 } finally {
   if (KEEP) console.log(`\nkept: ${TMP}`);
