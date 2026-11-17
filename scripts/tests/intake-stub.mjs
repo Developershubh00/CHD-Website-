@@ -96,6 +96,7 @@ if (method === 'countTokens') return out((sc.count || {})[model] || { totalToken
 if (method === 'generateContent') {
   const text = (JSON.parse(body).contents[0].parts[0] || {}).text || '';
   if (!/image|nano-banana/.test(model)) {
+    if ((sc.textErrors || {})[model]) return out({ error: sc.textErrors[model] }); // one text model only
     if (sc.textError) return out({ error: sc.textError });
     if (/single word: ok/.test(text)) return out({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] });
     if (/cataloguing/.test(text)) return out({ candidates: [{ content: { parts: [{ text: '{"field_pattern":"x","border":"none","colors":["red"],"texture":"flat","distinctive":"d"}' }] } }] });
@@ -368,9 +369,32 @@ try {
     t.eq(r.code, 2);
     t.has(r.out, 'intake: STOPPED - GEMINI_BILLING');
     t.has(r.out, 'intake: billing alert emailed');
+    t.eq(r.notify.length, 1, 'only the billing alert - no "no new designs" mail promising uploads get picked up');
     const q = run({ ...base(1), board: onBoard, textError: CREDITS }, { args: ['--quiet-empty'] });
     t.eq(q.code, 2);
     t.eq(q.notify.length, 0, 'the 11 AM recheck stays quiet');
+  });
+
+  await scenario('a stale broken row (no front image) does not switch the credit check off', (t) => {
+    const noFront = row('CHD-CH-2401'); noFront[10] = '';
+    const r = run({ ...base(), responses: [HDR, noFront], textError: CREDITS });
+    t.eq(r.code, 2);
+    t.has(r.out, 'intake: SKIP CHD-CH-2401: no front image link');
+    t.has(r.out, 'intake: STOPPED - GEMINI_BILLING');
+    t.has(r.out, 'intake: billing alert emailed');
+  });
+
+  await scenario('a mistyped GEMINI_TEXT_MODEL (404) does not hide depleted credits from the empty-day check', (t) => {
+    const r = run({ ...base(1), board: onBoard, textErrors: { 'gemini-2.5-flsh': nf('gemini-2.5-flsh').error }, textError: CREDITS }, { env: { GEMINI_TEXT_MODEL: 'gemini-2.5-flsh' } });
+    t.eq(r.code, 2);
+    t.has(r.out, 'intake: STOPPED - GEMINI_BILLING');
+    t.eq(textCalls(r).map((q) => q.model), ['gemini-2.5-flsh', 'gemini-flash-latest']);
+  });
+
+  await scenario('a style with two failing form rows is listed once (summary line and e-mail count)', (t) => {
+    const r = run({ ...base(), responses: [HDR, row('CHD-CH-2401'), row('CHD-CH-2401')], downloadError: 'Exception: No item with the given ID could be found.' }, { args: ['--quiet-empty'] });
+    t.has(r.out, 'intake: FAILED (will retry next run): CHD-CH-2401\n');
+    t.has(r.notify[0]?.subject || '', 'action needed - 1 submission(s) cannot be processed');
   });
 
   await scenario('the analysis model is picked once per run, not once per design', (t) => {

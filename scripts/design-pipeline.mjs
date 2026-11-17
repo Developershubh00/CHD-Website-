@@ -358,17 +358,20 @@ function geminiTextModel() {
   throw Object.assign(new Error(`no working Gemini text model found${last ? ` (last: ${last})` : ' (no flash text model is listed)'}`), { noTextModel: true, permanent });
 }
 
-// One un-retried generateContent ping, for runs that never need the analysis
-// model: returns a GEMINI_BILLING message when the account is out of credits,
-// otherwise null. Busy, network and any other error are not this check's
-// business - the next run looks again.
+// A generateContent ping without the busy back-off, for runs that never needed
+// the analysis model: returns a GEMINI_BILLING message when the account is out
+// of credits, otherwise null. A model refused outright (400/403/404, e.g. a
+// mistyped GEMINI_TEXT_MODEL) is skipped for the next candidate; busy, network
+// or any other error ends the check - the next run looks again.
 function billingProbe() {
   try {
-    const model = textModelCandidates(geminiModelNames())[0];
-    if (!model) return null;
-    const body = curlJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
-      { contents: [{ parts: [{ text: 'Reply with the single word: ok' }] }] });
-    return body.error && isBillingError(body.error) ? `GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}` : null;
+    for (const model of textModelCandidates(geminiModelNames())) {
+      const body = curlJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+        { contents: [{ parts: [{ text: 'Reply with the single word: ok' }] }] });
+      if (body.error && isBillingError(body.error)) return `GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}`;
+      if (!(body.error && [400, 403, 404].includes(Number(body.error.code)))) return null;
+    }
+    return null;
   } catch (e) {
     return /GEMINI_BILLING/.test(String(e.message)) ? String(e.message).slice(0, 220) : null;
   }
@@ -746,8 +749,10 @@ async function intake({ quietEmpty = false } = {}) {
   // model is busy stops the run cleanly instead of crashing before the sheet
   // is even read.
   let textModel = null;
+  let textPinged = false; // a billable Gemini call was attempted this run
   const analysisModel = () => {
     if (!textModel) {
+      textPinged = true;
       textModel = geminiTextModel();
       console.log(`intake: analysis model ${textModel}`);
     }
@@ -929,11 +934,11 @@ async function intake({ quietEmpty = false } = {}) {
       }
     }
   }
-  // A run with nothing to do never needs the analysis model, so it would make no
-  // billable call and depleted credits would go unnoticed until designs arrive.
-  // One un-retried ping keeps that early warning without the long waits the full
-  // model pick takes when Google is busy.
-  if (attempted === 0 && !billingStopped) {
+  // A run that never reached the analysis model (nothing to do, or only rows
+  // that fail before it, e.g. a missing front image) made no billable call, so
+  // depleted credits would go unnoticed until a usable design arrives. One ping
+  // without the busy back-off keeps that early warning.
+  if (!textPinged && !billingStopped) {
     const billing = billingProbe();
     if (billing) {
       console.log(`intake: STOPPED - ${billing}`);
@@ -947,7 +952,13 @@ async function intake({ quietEmpty = false } = {}) {
   // designer's newer resubmission later in the same run - only report styles
   // that did not make it onto the board this run. (Checking the board itself
   // would hide every failed REDO, whose style is on the board already.)
-  const realFailures = failures.filter((f) => !succeeded.has(f.style.toUpperCase()));
+  const reported = new Set(); // a style with several failing form rows is listed once
+  const realFailures = failures.filter((f) => {
+    const key = f.style.toUpperCase();
+    if (succeeded.has(key) || reported.has(key)) return false;
+    reported.add(key);
+    return true;
+  });
   if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.map((f) => f.style).join(', ')}`);
 
   const actionable = realFailures
@@ -981,7 +992,9 @@ async function intake({ quietEmpty = false } = {}) {
           `\n\n- CHD design pipeline (automated)`,
       });
       console.log('intake: team notified by email');
-    } else if (attempted === 0 && !quietEmpty) {
+    } else if (attempted === 0 && !quietEmpty && !billingStopped) {
+      // (on a billing stop the billing alert is the only e-mail: this one would
+      // promise that uploads get picked up, which is false until credits are topped up)
       // The nightly 9 PM run nags the team once; the 11 AM recheck passes
       // --quiet-empty so an empty morning doesn't nag a second time.
       await bridge('notify', {

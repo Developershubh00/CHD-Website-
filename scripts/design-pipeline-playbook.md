@@ -64,8 +64,9 @@ Generates lifestyle images for new submissions and REDO rows.
 10. `intake: STOPPED - no Gemini text model answered (all busy or
    unreachable)` means Google's text models were all overloaded (or the
    model list could not be fetched) when the first pending design needed
-   one. The analysis model is picked only then; a run with nothing to do
-   sends a single un-retried ping instead, just to catch depleted credits.
+   one. The analysis model is picked only then; a run that never needed it
+   (nothing to do, or only broken rows) sends one quick ping instead, just
+   to catch depleted credits.
    Nothing was generated or paid for; every pending design stays pending
    and the next run retries it. Report it - it is Google-side congestion,
    not a pipeline fault.
