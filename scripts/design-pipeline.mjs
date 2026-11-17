@@ -316,29 +316,62 @@ const FRAMING_RULES =
 // lives in lib/gemini-image.mjs and deliberately does NOT match Google's
 // ordinary quota 429, whose text also says "check your plan and billing".)
 
-function geminiTextModel() {
-  const names = geminiModelNames();
+// Flash text models in the order they are tried: an explicit GEMINI_TEXT_MODEL,
+// then gemini-flash-latest, then versioned flash models newest first.
+function textModelCandidates(names) {
   const versioned = names
     .filter((n) => /^gemini-[\d.]+-flash$/.test(n))
     .sort((a, b) => geminiVersion(b) - geminiVersion(a));
-  const candidates = [...new Set([
+  return [...new Set([
     clean(process.env.GEMINI_TEXT_MODEL),
     'gemini-flash-latest',
     ...versioned,
     ...names.filter((n) => n.includes('flash') && !n.includes('image') && !n.includes('live') && !n.includes('tts')),
   ])].filter((n) => n && (names.includes(n) || n === clean(process.env.GEMINI_TEXT_MODEL)));
+}
+
+// Live-pings the candidates and returns the first that answers. On failure the
+// error carries noTextModel, plus permanent when no later run can do better:
+// every candidate was refused outright (400/403/404 - retired or mistyped) or
+// none is listed. Busy, quota and network failures are not permanent.
+function geminiTextModel() {
+  let names;
+  try {
+    names = geminiModelNames();
+  } catch (e) {
+    if (/GEMINI_BILLING/.test(String(e.message))) throw e;
+    throw Object.assign(new Error(`no working Gemini text model found (${String(e.message).slice(0, 120)})`), { noTextModel: true });
+  }
   let last = '';
-  for (const candidate of candidates) {
+  let permanent = true;
+  for (const candidate of textModelCandidates(names)) {
     try {
       geminiCall(candidate, [{ text: 'Reply with the single word: ok' }]);
       return candidate;
     } catch (e) {
       if (isBillingError(e) || /GEMINI_BILLING/.test(String(e.message))) throw new Error(`GEMINI_BILLING: ${String(e.message).replace(/^GEMINI_BILLING:\s*/, '').slice(0, 200)}`);
+      if (![400, 403, 404].includes(Number(e.code))) permanent = false;
       last = String(e.message).slice(0, 100);
       console.log(`  text model ${candidate} unavailable, trying next (${last})`);
     }
   }
-  throw Object.assign(new Error(`no working Gemini text model found${last ? ` (last: ${last})` : ''}`), { noTextModel: true });
+  throw Object.assign(new Error(`no working Gemini text model found${last ? ` (last: ${last})` : ' (no flash text model is listed)'}`), { noTextModel: true, permanent });
+}
+
+// One un-retried generateContent ping, for runs that never need the analysis
+// model: returns a GEMINI_BILLING message when the account is out of credits,
+// otherwise null. Busy, network and any other error are not this check's
+// business - the next run looks again.
+function billingProbe() {
+  try {
+    const model = textModelCandidates(geminiModelNames())[0];
+    if (!model) return null;
+    const body = curlJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_KEY}`,
+      { contents: [{ parts: [{ text: 'Reply with the single word: ok' }] }] });
+    return body.error && isBillingError(body.error) ? `GEMINI_BILLING: ${JSON.stringify(body.error).slice(0, 200)}` : null;
+  } catch (e) {
+    return /GEMINI_BILLING/.test(String(e.message)) ? String(e.message).slice(0, 220) : null;
+  }
 }
 
 function geminiCall(model, parts) {
@@ -358,7 +391,7 @@ function geminiCall(model, parts) {
     console.log(`  gemini ${model} busy (${body.error.code}), waiting ${waitSec}s then retrying (${attempt}/4)...`);
     execFileSync('sleep', [String(waitSec)]);
   }
-  if (body.error) throw new Error(`gemini ${model}: ${JSON.stringify(body.error).slice(0, 300)}`);
+  if (body.error) throw Object.assign(new Error(`gemini ${model}: ${JSON.stringify(body.error).slice(0, 300)}`), { code: body.error.code });
   return (body?.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('');
 }
 
@@ -742,6 +775,8 @@ async function intake({ quietEmpty = false } = {}) {
   const categoryNotes = []; // auto-corrections / suspicious style prefixes to tell the team
   let billingStopped = false;
   let driveStopped = ''; // first Drive-refusal message, when the run had to stop on one
+  let textModelBroken = false; // no text model can work on this key - a settings problem, not congestion
+  const succeeded = new Set(); // styles that reached the board this run
   // Each design that meets a busy Gemini already waits ~6.5 min; if three in a
   // row still fail that way the service is down, so stop and leave the rest
   // pending for the next run instead of burning hours on every remaining design.
@@ -863,6 +898,7 @@ async function intake({ quietEmpty = false } = {}) {
       // run (e.g. a designer resubmitting after a broken upload): once a
       // style lands on the board, later rows with the same style are skipped.
       boardStyles.set(style.toUpperCase(), { row: -1, status: '' });
+      succeeded.add(style.toUpperCase());
     } catch (e) {
       if (/GEMINI_BILLING/.test(String(e.message)) || isBillingError(e)) {
         console.log(`intake: STOPPED at ${style} - ${String(e.message).slice(0, 200)}`);
@@ -878,7 +914,12 @@ async function intake({ quietEmpty = false } = {}) {
       }
       if (e.noTextModel) {
         // every design needs the analysis model, so the rest would fail the same way
-        console.log('intake: STOPPED - no Gemini text model answered (all busy or unavailable); the remaining designs stay pending and are retried at the next run');
+        if (e.permanent) {
+          textModelBroken = true;
+          console.log('intake: STOPPED - no usable Gemini text model on this key (every candidate was refused, or none is listed); check GEMINI_TEXT_MODEL and the key - the remaining designs stay pending');
+        } else {
+          console.log('intake: STOPPED - no Gemini text model answered (all busy or unreachable); the remaining designs stay pending and are retried at the next run');
+        }
         break;
       }
       overloadedInARow = e.overloaded ? overloadedInARow + 1 : 0;
@@ -888,13 +929,25 @@ async function intake({ quietEmpty = false } = {}) {
       }
     }
   }
+  // A run with nothing to do never needs the analysis model, so it would make no
+  // billable call and depleted credits would go unnoticed until designs arrive.
+  // One un-retried ping keeps that early warning without the long waits the full
+  // model pick takes when Google is busy.
+  if (attempted === 0 && !billingStopped) {
+    const billing = billingProbe();
+    if (billing) {
+      console.log(`intake: STOPPED - ${billing}`);
+      billingStopped = true;
+    }
+  }
   if (billingStopped) await billingAlert(quietEmpty);
   if (driveStopped) await driveAlert(quietEmpty, driveStopped);
   console.log(`intake: done, ${processed} design(s) sent for review`);
   // A style can fail on an old broken form row and still succeed via the
-  // designer's newer resubmission later in the same run - only report
-  // styles that truly did not make it onto the board.
-  const realFailures = failures.filter((f) => !boardStyles.has(f.style.toUpperCase()));
+  // designer's newer resubmission later in the same run - only report styles
+  // that did not make it onto the board this run. (Checking the board itself
+  // would hide every failed REDO, whose style is on the board already.)
+  const realFailures = failures.filter((f) => !succeeded.has(f.style.toUpperCase()));
   if (realFailures.length) console.log(`intake: FAILED (will retry next run): ${realFailures.map((f) => f.style).join(', ')}`);
 
   const actionable = realFailures
@@ -957,6 +1010,7 @@ async function intake({ quietEmpty = false } = {}) {
   }
   if (billingStopped) process.exit(2);
   if (driveStopped) process.exit(4);
+  if (textModelBroken) process.exit(5);
 }
 
 // ---------------------------------------------------------------------------

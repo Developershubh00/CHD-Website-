@@ -84,7 +84,12 @@ if (url.startsWith('https://bridge.example.invalid')) {
 
 const m = new URL(url).pathname.match(/^\\/v1beta\\/models(?:\\/([^:]+):(\\w+))?$/);
 if (!m) return out({ error: { code: 404, message: 'stub: unknown url' } });
-if (!m[1]) { log({ gemini: 'list' }); return sc.listError ? out({ error: sc.listError }) : out({ models: sc.models.map((n) => ({ name: 'models/' + n })) }); }
+if (!m[1]) {
+  log({ gemini: 'list' });
+  const ls = next('list'); // optional per-call sequence, e.g. [{}, { error }] = the 2nd listing fails
+  if (ls && ls.error) return out({ error: ls.error });
+  return sc.listError ? out({ error: sc.listError }) : out({ models: sc.models.map((n) => ({ name: 'models/' + n })) });
+}
 const model = m[1], method = m[2];
 log({ gemini: method, model });
 if (method === 'countTokens') return out((sc.count || {})[model] || { totalTokens: 1 });
@@ -346,12 +351,32 @@ try {
     t.has(r.out, 'NEW CHD-CH-2404');
   });
 
-  await scenario('an empty run (every submission already on the board) makes no Gemini text call at all', (t) => {
-    const r = run({ ...base(1), board: [BOARD_HDR, ['2026-10-22', 'CHD-CH-2401', 'Cushions', 'Designer', '', '', '', '', '']] });
+  const onBoard = [BOARD_HDR, ['2026-10-22', 'CHD-CH-2401', 'Cushions', 'Designer', '', '', '', '', '']];
+  const textCalls = (r) => r.requests.filter((q) => q.gemini === 'generateContent' && !/image/.test(q.model));
+
+  await scenario('an empty run never picks the analysis model: one un-retried billing ping, even when Google is busy', (t) => {
+    const r = run({ ...base(1), board: onBoard, textError: busy.error });
     t.eq(r.code, 0);
     t.has(r.out, 'intake: NO NEW DESIGNS');
     t.hasNot(r.out, 'analysis model');
-    t.eq(r.requests.filter((q) => q.gemini === 'generateContent').length, 0, 'no generateContent call');
+    t.hasNot(r.out, 'busy (503)', 'the ping is not retried');
+    t.eq(textCalls(r).length, 1, 'exactly one text call');
+  });
+
+  await scenario('an empty run still warns about depleted credits (STOPPED, billing alert e-mail, exit 2)', (t) => {
+    const r = run({ ...base(1), board: onBoard, textError: CREDITS });
+    t.eq(r.code, 2);
+    t.has(r.out, 'intake: STOPPED - GEMINI_BILLING');
+    t.has(r.out, 'intake: billing alert emailed');
+    const q = run({ ...base(1), board: onBoard, textError: CREDITS }, { args: ['--quiet-empty'] });
+    t.eq(q.code, 2);
+    t.eq(q.notify.length, 0, 'the 11 AM recheck stays quiet');
+  });
+
+  await scenario('the analysis model is picked once per run, not once per design', (t) => {
+    const r = run(base(3));
+    t.has(r.out, 'intake: done, 3 design(s) sent for review');
+    t.eq((r.out.match(/intake: analysis model /g) || []).length, 1);
   });
 
   await scenario('every text model busy -> the run stops cleanly (exit 0, no stack trace, no picture paid for) and the designs stay pending', (t) => {
@@ -369,10 +394,35 @@ try {
   await scenario('credits depleted when the analysis model is first needed -> STOPPED, billing alert e-mail, exit 2', (t) => {
     const r = run({ ...base(2), textError: CREDITS });
     t.eq(r.code, 2);
-    t.has(r.out, 'GEMINI_BILLING');
+    t.has(r.out, 'intake: STOPPED at CHD-CH-2401 - GEMINI_BILLING', 'stopped in the loop, not at startup');
     t.has(r.out, 'intake: billing alert emailed');
     t.hasNot(r.out, 'NEW CHD-CH-2402');
     t.eq(imageCalls(r).length, 0);
+  });
+
+  await scenario('every text model refused outright (404, retired) -> a settings fault, not congestion: exit 5, nothing paid for', (t) => {
+    const r = run({ ...base(2), textError: { code: 404, message: 'models/x is no longer available to new users', status: 'NOT_FOUND' } });
+    t.eq(r.code, 5);
+    t.has(r.out, 'intake: STOPPED - no usable Gemini text model on this key');
+    t.hasNot(r.out, 'all busy');
+    t.hasNot(r.out, 'NEW CHD-CH-2402');
+    t.eq(imageCalls(r).length, 0);
+  });
+
+  await scenario('the model list failing after startup -> stops cleanly at the first design instead of grinding through all of them', (t) => {
+    const r = run({ ...base(3), list: [{}, busy] });
+    t.eq(r.code, 0);
+    t.has(r.out, 'intake: STOPPED - no Gemini text model answered');
+    t.hasNot(r.out, 'NEW CHD-CH-2402');
+    t.eq(imageCalls(r).length, 0);
+  });
+
+  await scenario('a REDO that fails is reported like any other failure (summary line and action-needed e-mail)', (t) => {
+    const redo = [BOARD_HDR, ['2026-10-22', 'CHD-CH-2401', 'Cushions', 'Designer', '', '', 'REDO', 'warmer light', '']];
+    const r = run({ ...base(1), board: redo, downloadError: 'Exception: No item with the given ID could be found.' }, { args: ['--quiet-empty'] });
+    t.has(r.out, 'intake: REDO CHD-CH-2401');
+    t.has(r.out, 'intake: FAILED (will retry next run): CHD-CH-2401');
+    t.has(r.notify[0]?.subject || '', 'action needed - 1 submission(s) cannot be processed');
   });
 } finally {
   if (KEEP) console.log(`\nkept: ${TMP}`);
